@@ -534,7 +534,10 @@ async function runConformance(options) {
             const callsB = axios.calls.slice(mid);
             /** @type {string[]} */
             const problems = [];
-            const secretsA = JSON.stringify(credA) === JSON.stringify(credB) ? [] : Object.values(/** @type {Record<string, unknown>} */ (credA || {})).filter((v) => typeof v === 'string');
+            // Only A's values that B does not share, and long enough to be distinctive, are evidence of a leak.
+            const valuesB = new Set(Object.values(/** @type {Record<string, unknown>} */ (credB || {})).map(String));
+            const secretsA = Object.values(/** @type {Record<string, unknown>} */ (credA || {}))
+                .filter((v) => typeof v === 'string' && v.length >= 6 && !valuesB.has(v));
             const tokensA = generic ? [...generic.tokenPhase].filter(([, p]) => p === 'A').map(([t]) => t) : [];
             for (const config of callsB) {
                 const text = JSON.stringify({ url: config.url, params: config.params, data: config.data, headers: config.headers });
