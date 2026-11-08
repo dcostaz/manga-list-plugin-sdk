@@ -22,6 +22,7 @@ const {
     CAPABILITY_FILTERABLE,
 } = require('./contract.cjs');
 const { PluginError, isPluginError, toPluginError, HOST_CONTRACT_VIOLATION } = require('./errors.cjs');
+const { perEntry } = require('./results.cjs');
 const { createHttpRuntime } = require('./http.cjs');
 const { createScopedCache } = require('./cache.cjs');
 const { createSettingsClass } = require('./settings.cjs');
@@ -65,7 +66,8 @@ function idsOf(entries) {
  *   settings?: import('./settings.cjs').SettingsDocument | null,
  *   auth?: import('./http.cjs').AuthStrategy | null,
  *   createClient: (deps: { settings: Record<string, unknown>, utils: Record<string, any>, pluginName: string, addNormalizer: (fn: (response: any) => void) => void }) => (view: CallViewBase) => any,
- *   methods: Record<string, (view: CallView, ...args: any[]) => Promise<any>>,
+ *   methods?: Record<string, (view: CallView, ...args: any[]) => Promise<any>>,
+ *   mapping?: Record<string, (raw: any, ...args: any[]) => any>,
  *   initialize?: (deps: { settings: Record<string, unknown> }) => Promise<{ status: string, message?: string } | void>,
  *   getStatus?: (deps: { settings: Record<string, unknown> }) => Promise<{ status: string, message?: string }> | { status: string, message?: string }
  * }} TrackerDefinition
@@ -109,6 +111,9 @@ function defineTrackerPlugin(definition) {
         throw fail('definition.createClient must be a function returning a per-call client factory');
     }
     const methods = definition.methods && typeof definition.methods === 'object' ? definition.methods : {};
+    // With a mapping module, a method with no explicit binding is bound by convention: the client's source
+    // call of the same name, its answer through the mapping's function of the same name (if any).
+    const mapping = definition.mapping && typeof definition.mapping === 'object' ? definition.mapping : null;
     const auth = definition.auth || null;
     const declaresCredential = capabilities.includes(CAPABILITY_CREDENTIAL);
 
@@ -125,7 +130,7 @@ function defineTrackerPlugin(definition) {
             throw fail(`a 'credential' plugin needs an auth strategy (definition.auth) or its own testCredentials binding`);
         }
     }
-    const missing = [...needed].filter((m) => m !== 'testCredentials' && !bound.has(m));
+    const missing = mapping ? [] : [...needed].filter((m) => m !== 'testCredentials' && !bound.has(m));
     const extra = [...bound].filter((m) => !needed.has(m));
     if (missing.length || extra.length) {
         const parts = [];
@@ -237,6 +242,33 @@ function defineTrackerPlugin(definition) {
         }
     }
 
+    /**
+     * The convention binding (used when the definition gives a mapping and no explicit binding): the client
+     * exposes one source call per contract method, named after it; the mapping turns its answer into the DTO.
+     * An array method is called per entry, through perEntry().
+     * @param {string} method
+     * @returns {(view: CallView, ...args: any[]) => Promise<any>}
+     */
+    function conventionBinding(method) {
+        const mapOne = mapping && typeof mapping[method] === 'function' ? mapping[method] : null;
+        const perEntryMethod = Object.prototype.hasOwnProperty.call(ARRAY_METHODS, method);
+        return async (view, ...args) => {
+            const client = view.client;
+            if (!client || typeof client[method] !== 'function') {
+                throw new PluginError('source_error', `${name}: the client has no '${method}' source call for the convention binding`);
+            }
+            if (perEntryMethod) {
+                return perEntry(args[0], async (/** @type {any} */ entry) => {
+                    const raw = await client[method](entry, ...args.slice(1));
+                    const out = mapOne ? mapOne(raw, entry) : raw;
+                    return out && typeof out === 'object' ? out : {};
+                });
+            }
+            const raw = await client[method](...args);
+            return mapOne ? mapOne(raw, ...args) : raw;
+        };
+    }
+
     class WrapperClass {
         static get pluginName() {
             return name;
@@ -311,7 +343,7 @@ function defineTrackerPlugin(definition) {
                 if (binding) {
                     return (await binding(view, credential)) === true;
                 }
-                await /** @type {import('./http.cjs').AuthStrategy} */ (auth).exchange(credential, { http: view.http, previous: null, reason: 'initial' });
+                await /** @type {import('./http.cjs').AuthStrategy} */ (auth).exchange(credential, { http: view.http, settings: st.settings, previous: null, reason: 'initial' });
                 return true;
             } catch (error) {
                 if (isPluginError(error) && error.code === 'credential_rejected') return false;
@@ -322,7 +354,7 @@ function defineTrackerPlugin(definition) {
 
     for (const method of needed) {
         if (method === 'testCredentials') continue;
-        const binding = methods[method];
+        const binding = methods[method] || conventionBinding(method);
         const idsFor = /** @type {Record<string, (args: any[]) => string[]>} */ (ARRAY_METHODS)[method];
         proto[method] = {
             /**

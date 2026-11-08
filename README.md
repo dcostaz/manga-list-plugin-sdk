@@ -36,6 +36,11 @@ module.exports = defineTrackerPlugin({
 - **Bindings are keyed by method.** The SDK holds the contract's offer → method table and fails at `require`
   time, by name, for a declared offer whose method has no binding and for a binding no declared offer needs.
   `sync.list` and `watch.list` share `getReadingList`: bind it once; the plugin never knows which offer called.
+- **Bindings by convention.** Give `mapping` instead of (or beside) `methods`, and every method without an explicit
+  binding is bound as `mapping[method](await view.client[method](...args), ...args)`; an array method calls the
+  client once per entry through `perEntry`. The client then exposes one source call per contract method, named
+  after it, and the mapping one function per method whose answer needs translating. An explicit binding always
+  wins. The template uses the convention, so a new tracker edits only its client, mapping, manifest and settings.
 - **The per-call view.** Every method's last argument from the host is `callContext { credential, identity,
   scope, signal }`; the facade pops it and hands the binding `view = { client, http, cache, credential,
   identity, scope, signal, settings, utils }`. `view.http` is the instance's HTTP bound to this call;
@@ -45,7 +50,7 @@ module.exports = defineTrackerPlugin({
   per-endpoint throttle (`api.endpoints.<name>.throttle`, pass `endpoint: '<name>'`), circuit breaker, and the
   call's abort signal. Failures are `PluginError`s with the contract's codes.
 - **`http.authed(fn)` / `http.authedRequest(config)`** — the one 401 shape: token set from the in-memory token
-  cache (keyed by `identity`), else `auth.exchange(credential, { http, previous, reason })`; `auth.apply(tokens,
+  cache (keyed by `identity`), else `auth.exchange(credential, { http, settings, previous, reason })`; `auth.apply(tokens,
   config)` per request; on an auth failure, re-exchange once under the same credential and replay once.
   `previous` carries the old set, so a refresh token survives an expired access token. A client may register
   response normalizers (`addNormalizer`), never a replay.

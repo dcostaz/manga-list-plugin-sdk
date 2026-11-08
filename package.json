@@ -3,7 +3,7 @@
   "version": "4.0.0",
   "description": "The manga-list plugin runtime: builds a plugin's contract facade from its definition, owns HTTP discipline, per-call credentials and conformance checks. Host-owned; contract version = this package's version.",
   "main": "index.cjs",
-  "types": "types/plugintypedefs.d.ts",
+  "types": "types/index.d.ts",
   "exports": {
     ".": "./index.cjs",
     "./testing": "./testing/index.cjs",
