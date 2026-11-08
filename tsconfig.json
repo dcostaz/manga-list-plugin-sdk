@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "checkJs": true,
+    "allowJs": true,
+    "moduleResolution": "node",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "strict": true,
+    "ignoreDeprecations": "6.0",
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+    "noEmit": true,
+    "lib": [
+      "es2022",
+      "dom"
+    ],
+    "types": [
+      "node"
+    ],
+    "typeRoots": ["./types", "./node_modules/@types"]
+  },
+  "include": [
+    "types/*.d.ts",
+    "index.cjs",
+    "src/**/*.cjs",
+    "testing/**/*.cjs"
+  ],
+  "exclude": [
+    "node_modules",
+    "tests"
+  ]
+}
