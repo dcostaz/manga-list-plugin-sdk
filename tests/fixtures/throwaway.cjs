@@ -6,7 +6,7 @@
  * The stub source is the axios stub's handler: `sourceHandler(config)`.
  */
 
-const { defineTrackerPlugin, perEntry, PluginError } = require('../../index.cjs');
+const { defineTrackerPlugin, perEntry, PluginError, isPluginError } = require('../../index.cjs');
 
 const manifest = {
     pluginName: 'throwaway',
@@ -136,7 +136,14 @@ const descriptor = defineTrackerPlugin({
             const out = await view.client.putEntry(e.pluginEntryId, { state: e.status });
             return { listId: null, status: out.state ?? e.status };
         }),
-        unsubscribe: async (view, ids) => perEntry(ids, async (id) => { await view.client.deleteEntry(id); return {}; }),
+        unsubscribe: async (view, ids) => perEntry(ids, async (id) => {
+            try {
+                await view.client.deleteEntry(id);
+            } catch (error) {
+                if (!(isPluginError(error) && error.code === 'not_found')) throw error; // already absent: idempotent (§2)
+            }
+            return {};
+        }),
         queryLive: async (view, id) => {
             const s = await view.client.series(id);
             if (!s) throw new PluginError('not_found', 'no such series');
