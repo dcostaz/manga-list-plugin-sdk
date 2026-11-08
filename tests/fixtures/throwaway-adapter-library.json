@@ -1,0 +1,4 @@
+[
+  { "id": "entry-1", "title": "A Title", "altTitles": ["Another Title"], "chapter": 12, "seriesStatus": "ongoing" },
+  { "id": "entry-2", "title": "Second Title", "altTitles": [], "chapter": null, "seriesStatus": "completed" }
+]

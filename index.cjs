@@ -6,7 +6,7 @@
  */
 
 const contract = require('./src/contract.cjs');
-const { defineTrackerPlugin } = require('./src/define.cjs');
+const { definePlugin, defineTrackerPlugin, defineAdapterPlugin } = require('./src/define.cjs');
 const { PluginError, isPluginError, toPluginError, PLUGIN_ERROR_CODES, HOST_CONTRACT_VIOLATION, PLUGIN_ERROR_BRAND } = require('./src/errors.cjs');
 const { perEntry, notFoundEntry, markCached } = require('./src/results.cjs');
 const { validateResult, VALIDATED_METHODS } = require('./src/validators.cjs');
@@ -14,7 +14,9 @@ const { createSettingsClass, assertSettingsDocument } = require('./src/settings.
 
 module.exports = {
     ...contract,
+    definePlugin,
     defineTrackerPlugin,
+    defineAdapterPlugin,
     PluginError,
     isPluginError,
     toPluginError,

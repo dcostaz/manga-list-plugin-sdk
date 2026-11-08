@@ -11,11 +11,12 @@ function minimalDefinition(overrides = {}) {
     return {
         manifest: {
             pluginName: 'mini', displayName: 'Mini', pluginType: 'tracker', pluginContractVersion: '4.0.0', hostApiVersion: '1.0.0',
-            capabilities: ['search.query', 'sync.list', 'watch.list'],
+            capabilities: ['credential', 'search.query', 'sync.list', 'watch.list'],
             entrypoints: { pluginModule: 'plugin-mini.cjs', settingsFile: 'mini.json' },
         },
         settings: { metadata: { componentName: 'MiniAPI' }, schema: {}, settings: {} },
         createClient: () => () => ({}),
+        auth: { exchange: async () => ({ tokens: {} }), apply: (/** @type {any} */ _t, /** @type {any} */ config) => config },
         methods: {
             search: async () => [],
             getReadingList: async () => [],
@@ -57,7 +58,7 @@ test('a binding no declared offer needs fails at definition time, by name', () =
 
 test('a credential plugin without an auth strategy or testCredentials binding is refused', () => {
     const def = minimalDefinition();
-    def.manifest.capabilities = ['credential', ...def.manifest.capabilities];
+    delete def.auth;
     assert.throws(() => defineTrackerPlugin(/** @type {any} */ (def)), /auth strategy/);
 });
 
@@ -115,7 +116,7 @@ test('subscribe() refuses a host status where the source token belongs', async (
 
 test('pushProgress() refuses an axis the manifest does not declare for push', async () => {
     const def = minimalDefinition();
-    def.manifest.capabilities = ['sync.push'];
+    def.manifest.capabilities = ['credential', 'sync.push'];
     def.manifest.syncOptions = { progressAxes: { push: ['chapter'] } };
     def.methods = { pushProgress: async () => [] };
     const d = defineTrackerPlugin(/** @type {any} */ (def));
@@ -129,7 +130,7 @@ test('pushProgress() refuses an axis the manifest does not declare for push', as
 test('queryLive() maps a not_found throw to its result arm', async () => {
     const d = defineTrackerPlugin(/** @type {any} */ ({
         ...minimalDefinition(),
-        manifest: { ...minimalDefinition().manifest, capabilities: ['watch.entry'] },
+        manifest: { ...minimalDefinition().manifest, capabilities: ['credential', 'watch.entry'] },
         methods: { queryLive: async () => { throw new (require('../index.cjs').PluginError)('not_found', 'gone'); } },
     }));
     const instance = await d.WrapperClass.init({ context: createStubContext() });
@@ -177,7 +178,7 @@ test('with a mapping, unbound methods are bound by convention: client.<method> â
             getReadingList: async () => [],
         }),
     });
-    def.manifest.capabilities = ['search.query', 'sync.list', 'subscribe.remove'];
+    def.manifest.capabilities = ['credential', 'search.query', 'sync.list', 'subscribe.remove'];
     const client = { search: async () => [{ id: 7, name: 'Seven' }], getReadingList: async () => [], unsubscribe: async (/** @type {string} */ id) => { if (id === 'bad') throw new (require('../index.cjs').PluginError)('offline', 'down'); } };
     def.createClient = () => () => client;
     const d = defineTrackerPlugin(/** @type {any} */ (def));

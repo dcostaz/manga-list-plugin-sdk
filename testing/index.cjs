@@ -4,7 +4,7 @@
  * @manga-list/plugin-sdk/testing — the contract's executable form
  * (Plan-2026Q4-tracker-plugin-standardization, Phases 1.7 and 2).
  *
- * The unit under test is a loaded WrapperClass behind the contract boundary, built by defineTrackerPlugin()
+ * The unit under test is a loaded WrapperClass behind the contract boundary, built by definePlugin()
  * or by hand. Two construction shapes: `harness: '4.0'` (the contract's init) and `harness: '3.x'` (what the
  * pre-4.0 wrappers expect: an HTTP client factory, and `setCredentials` before each call, the call context
  * still appended). Each case has a kind — structure, shape, behaviour, harness — and, where it encodes one,
@@ -12,7 +12,8 @@
  * against Part IV and Appendix A.
  */
 
-const { OFFER_METHODS, HOST_READING_STATUSES } = require('../src/contract.cjs');
+const path = require('path');
+const { OFFER_METHODS, OWN_READ_METHODS, TRANSITIONAL_READ_METHODS, HOST_READING_STATUSES } = require('../src/contract.cjs');
 const { validateResult } = require('../src/validators.cjs');
 const { isPluginError, HOST_CONTRACT_VIOLATION } = require('../src/errors.cjs');
 
@@ -214,6 +215,10 @@ function defaultInputs(manifest) {
     const progress = {};
     if (pushAxes.includes('chapter')) progress.chapter = 12;
     if (pushAxes.includes('rating')) progress.rating = 8;
+    const filterSchema = manifest.filterSchema && typeof manifest.filterSchema === 'object' ? manifest.filterSchema : {};
+    const [filterField, filterDef] = Object.entries(filterSchema)[0] || ['', {}];
+    const filterValue = filterDef && Array.isArray(filterDef.values) && filterDef.values.length ? filterDef.values[0]
+        : (filterDef && filterDef.type === 'boolean' ? true : 'x');
     return {
         search: ['a title', undefined],
         lookup: ['entry-1'],
@@ -230,7 +235,31 @@ function defaultInputs(manifest) {
         listChapters: ['entry-1', undefined],
         listPages: ['entry-1', 'chapter-1'],
         downloadPage: ['entry-1', 'chapter-1', 'page-1'],
+        queryFilter: [filterField ? { fields: { [filterField]: filterValue } } : { fields: {} }],
+        listEntries: [{}, { page: 1, pageSize: 10 }],
+        getEntry: ['entry-1'],
+        pullProgressBatch: [],
     };
+}
+
+/** Methods that read the source and so must never answer an unreadable one with an empty result (A25). */
+const READ_METHODS = Object.freeze([
+    'search', 'lookup', 'enrich', 'searchCovers', 'pullProgress', 'getReadingList', 'queryLive', 'summarizeEntries',
+    'listChapters', 'listPages', 'queryFilter', 'listEntries', 'getEntry',
+]);
+
+/**
+ * The same grant with every path moved under a folder that does not exist (A25's unreadable source).
+ * @param {unknown} grant
+ * @returns {Record<string, string>}
+ */
+function unreadableGrant(grant) {
+    /** @type {Record<string, string>} */
+    const out = {};
+    for (const [key, value] of Object.entries(/** @type {Record<string, unknown>} */ (grant || {}))) {
+        out[key] = typeof value === 'string' ? path.join(path.dirname(value), '__conformance_missing__', path.basename(value)) : String(value);
+    }
+    return out;
 }
 
 /**
@@ -273,6 +302,10 @@ function settingsShim(settings) {
 
 /**
  * Run the contract cases against a WrapperClass.
+ *
+ * For a `file-path` plugin, `credentials` are its path grants (A19: `{ [key]: absolute path }` over fixture
+ * files), and the A19/A21/A25 cases run: a call without its grant is refused, a filter naming no schema field
+ * is not applicable, and a grant whose paths do not exist is never answered with an empty result.
  *
  * @param {{
  *   WrapperClass: any,
@@ -326,10 +359,14 @@ async function runConformance(options) {
     }
 
     const capabilities = Array.isArray(manifest.capabilities) ? manifest.capabilities : [];
-    /** @type {Map<string, string>} method → first offer that needs it */
+    const filePath = capabilities.includes('file-path');
+    /** @type {Map<string, string>} method → first offer (or declaration) that needs it */
     const needed = new Map();
     for (const cap of capabilities) for (const m of OFFER_METHODS[cap] || []) if (!needed.has(m)) needed.set(m, cap);
+    if (manifest.workspace && manifest.workspace.entry) for (const m of OWN_READ_METHODS) needed.set(m, 'workspace.entry');
     const proto = WrapperClass && WrapperClass.prototype ? WrapperClass.prototype : {};
+    /** The transitional read is tested for presence only, never validated (A23). */
+    const transitional = TRANSITIONAL_READ_METHODS.filter((m) => typeof proto[m] === 'function');
 
     // ── structure ───────────────────────────────────────────────────────────
     if (options.descriptor) {
@@ -349,7 +386,7 @@ async function runConformance(options) {
         ));
     }
     await check('IV.no-public-method-outside-the-contract', 'structure', 'IV.public-methods', () => {
-        const allowed = new Set([...needed.keys(), ...LIFECYCLE_METHODS]);
+        const allowed = new Set([...needed.keys(), ...LIFECYCLE_METHODS, ...transitional]);
         return Object.getOwnPropertyNames(proto)
             .filter((m) => typeof proto[m] === 'function' && !m.startsWith('_') && !allowed.has(m))
             .map((m) => `public method '${m}' is not named by the contract for the declared offers${m === 'compareProgress' ? ' (A13: the host compares)' : ''}`);
@@ -425,6 +462,9 @@ async function runConformance(options) {
         await check(`result.${method}`, 'shape', /** @type {Record<string, string>} */ (RESULT_FINDINGS)[method], async () => {
             const result = await invoke(method, args, makeContext());
             results[method] = result;
+            if (method === 'queryFilter' && result && /** @type {any} */ (result).applicable === false) {
+                return [`queryFilter: the default spec names a filterSchema field, yet the answer is not applicable`];
+            }
             return validateResult(method, result, { manifest: manifest.syncOptions && manifest.syncOptions.statusVocabulary && manifest.syncOptions.statusVocabulary.pull ? manifest : null, inputIds: inputIdsOf(args) });
         });
         await check(`callContext.${method}-refuses-a-call-without-one`, 'shape', undefined, async () => {
@@ -498,8 +538,10 @@ async function runConformance(options) {
             axios.setHandler(() => ({ status: 503, data: {} }));
             try {
                 // A fresh identity and scope: an answer the plugin cached for an earlier case (legitimately, per
-                // scope) must not stand in for a source that is failing now.
-                const result = await invoke(method, args, makeContext({ identity: `slot-label-batch-${method}`, scope: `user-label-batch-${method}` }));
+                // scope) must not stand in for a source that is failing now. A file-path plugin's failing source
+                // is a grant whose files do not exist.
+                const failing = { identity: `slot-label-batch-${method}`, scope: `user-label-batch-${method}` };
+                const result = await invoke(method, args, makeContext(filePath ? { ...failing, credential: unreadableGrant(credA) } : failing));
                 const ids = inputIdsOf(args) || [];
                 if (!Array.isArray(result) || result.length !== ids.length) return [`expected ${ids.length} per-entry results, got ${JSON.stringify(result)}`];
                 return result.filter((/** @type {any} */ r) => r.success !== false).map((/** @type {any} */ r) => `entry '${r.pluginEntryId}' reported success while the source failed`);
@@ -525,7 +567,7 @@ async function runConformance(options) {
     }
 
     // ── identities (F11) ────────────────────────────────────────────────────
-    if (needed.has('getReadingList')) {
+    if (capabilities.includes('credential') && needed.has('getReadingList')) {
         await check('F11.no-identity-leaks-across-calls', 'behaviour', 'F11', async () => {
             if (generic) generic.setPhase('A');
             await invoke('getReadingList', [], makeContext({ credential: credA, identity: 'slot-label-a', scope: 'user-label-a' })).catch(() => null);
@@ -556,6 +598,61 @@ async function runConformance(options) {
     await check('F11.cache-keys-name-the-scope', 'behaviour', 'F11', () => cache.writes
         .filter((w) => w.scope && !w.key.includes(w.scope))
         .map((w) => `cache key '${w.key}' was written for scope '${w.scope}' but does not name it`));
+
+    // ── file-path, filter, own reads (adapter plan, A19–A25) ──────────────────
+    if (filePath) {
+        const first = [...needed.keys()].find((m) => m !== 'testCredentials');
+        if (first) {
+            await check(`A19.${first}-refuses-a-call-without-its-path-grant`, 'shape', 'A19', async () => {
+                try {
+                    await invoke(first, inputs[first] || [], makeContext({ credential: null }));
+                    return [`${first}() ran with no path grant in callContext.credential`];
+                } catch (error) {
+                    return isPluginError(error) && error.code === HOST_CONTRACT_VIOLATION ? [] : [`expected host_contract_violation, got ${error instanceof Error ? error.message : String(error)}`];
+                }
+            });
+        }
+        for (const method of READ_METHODS.filter((m) => needed.has(m))) {
+            await check(`A25.${method}-never-answers-an-unreadable-source-empty`, 'behaviour', 'A25', async () => {
+                const ctx = makeContext({ credential: unreadableGrant(credA), identity: `slot-label-unreadable-${method}`, scope: `user-label-unreadable-${method}` });
+                let out;
+                try {
+                    out = await invoke(method, inputs[method] || [], ctx);
+                } catch (error) {
+                    return isPluginError(error) && (error.code === 'source_error' || error.code === 'offline')
+                        ? []
+                        : [`threw '${error instanceof Error ? error.message : String(error)}', not a PluginError source_error/offline`];
+                }
+                if (Array.isArray(out) && ARRAY_METHODS.includes(method)) {
+                    return out.filter((/** @type {any} */ r) => !(r && r.success === false && r.error && (r.error.code === 'source_error' || r.error.code === 'offline')))
+                        .map((/** @type {any} */ r) => `entry '${r && r.pluginEntryId}' answered ${JSON.stringify(r && (r.success ? 'success' : r.error))} for an unreadable source`);
+                }
+                if (method === 'queryLive' && out && (/** @type {any} */ (out).status === 'error' || /** @type {any} */ (out).status === 'offline')) return [];
+                return [`answered ${JSON.stringify(out)} for an unreadable source; expected source_error (A25: never an empty answer)`];
+            });
+        }
+        if (needed.has('summarizeEntries')) {
+            await check('A4.summarizeEntries-unknown-entry-is-not_found', 'behaviour', 'A4', async () => {
+                const out = await invoke('summarizeEntries', [['__conformance_unknown__']], makeContext());
+                const r = Array.isArray(out) ? /** @type {any} */ (out[0]) : null;
+                return r && r.success === false && r.error && r.error.code === 'not_found' ? [] : [`expected not_found for an unknown entry, got ${JSON.stringify(out)}`];
+            });
+        }
+    }
+    if (needed.has('queryFilter')) {
+        await check('A21.a-filter-naming-no-schema-field-is-not-applicable', 'behaviour', 'A21', async () => {
+            const out = await invoke('queryFilter', [{ fields: { __not_a_schema_field__: 'x' } }], makeContext());
+            const r = /** @type {any} */ (out);
+            return r && r.applicable === false && Array.isArray(r.pluginEntryIds) && r.pluginEntryIds.length === 0
+                ? [] : [`expected { applicable: false, pluginEntryIds: [] }, got ${JSON.stringify(out)}`];
+        });
+    }
+    if (needed.has('getEntry')) {
+        await check('own.getEntry-unknown-id-is-null', 'behaviour', '§5.4', async () => {
+            const out = await invoke('getEntry', ['__conformance_unknown__'], makeContext());
+            return out === null ? [] : [`expected null for an id the plugin does not know, got ${JSON.stringify(out)}`];
+        });
+    }
 
     // ── fixture expectations ────────────────────────────────────────────────
     if (options.expect && typeof options.expect.readingListLength === 'number' && needed.has('getReadingList')) {

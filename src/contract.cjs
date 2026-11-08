@@ -1,16 +1,19 @@
 'use strict';
 
 /**
- * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.0.0).
+ * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.1.0).
  *
  * The SDK's version IS the contract version (§1 header): a plugin's manifest names the SDK version it was
  * built against in `pluginContractVersion`, and the host compares majors and refuses a newer minor.
  *
  * This file replaces the `plugindtocontract.cjs` each plugin repo used to vendor (seven mirrors of one
- * constant). The host keeps its own constant until the standardization plan's Phase 5b re-points it here.
+ * constant).
  */
 
-const PLUGIN_CONTRACT_VERSION = '4.0.0';
+const PLUGIN_CONTRACT_VERSION = '4.1.0';
+
+/** A17: the oldest contract an `adapter` package may be built against (its access, filter and own reads changed). */
+const MIN_ADAPTER_CONTRACT_VERSION = '4.1.0';
 const PLUGIN_SETTINGS_CONTRACT_VERSION = '1.0.0';
 
 // §1.1 Access offers — exactly one applies per plugin.
@@ -61,9 +64,9 @@ const PRESENTATION_FACTS = Object.freeze([
 const KNOWN_CAPABILITIES = Object.freeze([...ACCESS_OFFERS, ...OPERATION_OFFERS, ...PRESENTATION_FACTS]);
 
 /**
- * §2's offer → method table, for the offers a tracker binds. Two offers may share one method
- * (`sync.list`/`watch.list` → `getReadingList`): the plugin binds the method once and never knows which
- * offer called. `filterable` belongs to the adapter plan's runtime and is not bound here.
+ * §2's offer → method table. Two offers may share one method (`sync.list`/`watch.list` → `getReadingList`):
+ * the plugin binds the method once and never knows which offer called. `filterable` is the one presentation
+ * fact with a method (§1.3, A20).
  * @type {Readonly<Record<string, readonly string[]>>}
  */
 const OFFER_METHODS = Object.freeze({
@@ -82,7 +85,14 @@ const OFFER_METHODS = Object.freeze({
     [CAPABILITY_WATCH_SUMMARY]: Object.freeze(['summarizeEntries']),
     [CAPABILITY_RETRIEVE_CHAPTER_LIST]: Object.freeze(['listChapters']),
     [CAPABILITY_RETRIEVE_CHAPTER_PAGES]: Object.freeze(['listPages', 'downloadPage']),
+    [CAPABILITY_FILTERABLE]: Object.freeze(['queryFilter']),
 });
+
+/** §5.4's own-data reads: no catalog string; a manifest `workspace.entry` block requires them (A22). */
+const OWN_READ_METHODS = Object.freeze(['listEntries', 'getEntry']);
+
+/** §5.4's one transitional read (A23), bound only by a plugin that already has it; unvalidated. */
+const TRANSITIONAL_READ_METHODS = Object.freeze(['pullProgressBatch']);
 
 /**
  * Each operation offer's governed domain (§1.2), and each domain's credential side (§2.5).
@@ -103,6 +113,7 @@ const OFFER_DOMAIN = Object.freeze({
     [CAPABILITY_WATCH_SUMMARY]: 'Watching',
     [CAPABILITY_RETRIEVE_CHAPTER_LIST]: 'Retrieving',
     [CAPABILITY_RETRIEVE_CHAPTER_PAGES]: 'Retrieving',
+    [CAPABILITY_FILTERABLE]: 'Searching',
 });
 
 /** @type {Readonly<Record<string, 'system' | 'user'>>} */
@@ -122,21 +133,10 @@ const HOST_READING_STATUSES = Object.freeze(['READING', 'COMPLETED', 'PLAN_TO_RE
 const PROGRESS_AXIS_CATALOG = Object.freeze(['chapter', 'rating']);
 const PROGRESS_AXIS_SCALES = Object.freeze(['integer', 'decimal']);
 
-/**
- * Thrown by `queryFilter()` when no field in the spec matches the plugin's filterSchema; the host treats
- * the filter as pass-through. Kept for the adapter runtime.
- */
-class FilterNotApplicableError extends Error {
-    /** @param {string} [message] */
-    constructor(message) {
-        super(message || 'No filter spec fields match this plugin\'s filterSchema');
-        this.name = 'FilterNotApplicableError';
-    }
-}
-
 module.exports = {
     PLUGIN_CONTRACT_VERSION,
     PLUGIN_SETTINGS_CONTRACT_VERSION,
+    MIN_ADAPTER_CONTRACT_VERSION,
 
     CAPABILITY_CREDENTIAL,
     CAPABILITY_FILE_PATH,
@@ -165,11 +165,11 @@ module.exports = {
     PRESENTATION_FACTS,
     KNOWN_CAPABILITIES,
     OFFER_METHODS,
+    OWN_READ_METHODS,
+    TRANSITIONAL_READ_METHODS,
     OFFER_DOMAIN,
     DOMAIN_SIDE,
     HOST_READING_STATUSES,
     PROGRESS_AXIS_CATALOG,
     PROGRESS_AXIS_SCALES,
-
-    FilterNotApplicableError,
 };

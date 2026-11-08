@@ -379,7 +379,69 @@ const VALIDATORS = {
     downloadPage(result) {
         return isBytes(result) ? [] : ['downloadPage: must resolve to image bytes (Buffer)'];
     },
+
+    queryFilter(result) {
+        if (!isRecord(result)) {
+            return ['queryFilter: must return a PluginFilterResult { applicable, pluginEntryIds } (A21)'];
+        }
+        /** @type {string[]} */
+        const problems = [];
+        if (typeof result.applicable !== 'boolean') {
+            problems.push(`queryFilter: 'applicable' must be a boolean`);
+        }
+        if (!Array.isArray(result.pluginEntryIds) || result.pluginEntryIds.some((id) => typeof id !== 'string')) {
+            problems.push(`queryFilter: 'pluginEntryIds' must be string[]`);
+        } else if (result.applicable === false && result.pluginEntryIds.length) {
+            problems.push(`queryFilter: a result that is not applicable carries no ids`);
+        }
+        return problems;
+    },
+
+    listEntries(result) {
+        if (!isRecord(result)) {
+            return ['listEntries: must return a PluginEntryPage { entries, totalCount, page, pageSize } (§5.4)'];
+        }
+        /** @type {string[]} */
+        const problems = [];
+        for (const key of ['totalCount', 'page', 'pageSize']) {
+            if (typeof result[key] !== 'number') problems.push(`listEntries: '${key}' must be a number`);
+        }
+        if (!Array.isArray(result.entries)) {
+            problems.push(`listEntries: 'entries' must be PluginWorkspaceEntry[]`);
+            return problems;
+        }
+        result.entries.forEach((entry, index) => workspaceEntry(entry, `listEntries.entries[${index}]`, problems));
+        return problems;
+    },
+
+    getEntry(result) {
+        if (result === null) return [];
+        /** @type {string[]} */
+        const problems = [];
+        workspaceEntry(result, 'getEntry', problems);
+        return problems;
+    },
 };
+
+/**
+ * PluginWorkspaceEntry (§2.6, A22): only the fields the host reads are checked; the rest is the plugin's surface's.
+ * @param {unknown} entry
+ * @param {string} where
+ * @param {string[]} problems
+ */
+function workspaceEntry(entry, where, problems) {
+    if (!isRecord(entry)) {
+        problems.push(`${where}: must be an object`);
+        return;
+    }
+    requiredString(entry, 'pluginEntryId', where, problems);
+    if (typeof entry.title !== 'string') {
+        problems.push(`${where}: 'title' must be a string`);
+    }
+    if (entry.altTitles !== undefined && (!Array.isArray(entry.altTitles) || entry.altTitles.some((t) => typeof t !== 'string'))) {
+        problems.push(`${where}: 'altTitles' must be string[] when present`);
+    }
+}
 
 /**
  * @param {string} method - a §2 method name

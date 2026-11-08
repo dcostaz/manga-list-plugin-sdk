@@ -69,8 +69,9 @@ test('validators: per-entry arrays are one per input, in order, with contract er
     assert.match(sdk.validateResult('unsubscribe', [{ pluginEntryId: 'a', success: false, error: { code: 'unauthorized', message: 'x' } }]).join(' '), /closed set/);
 });
 
-test('every §2 method a tracker binds has a validator', () => {
-    const methods = new Set(Object.values(sdk.OFFER_METHODS).flat());
+test('every §2 method and own-data read has a validator; the transitional read has none (A23)', () => {
+    const methods = new Set([...Object.values(sdk.OFFER_METHODS).flat(), ...sdk.OWN_READ_METHODS]);
+    for (const m of sdk.TRANSITIONAL_READ_METHODS) assert.ok(!sdk.VALIDATED_METHODS.includes(m), m);
     for (const m of methods) assert.ok(sdk.VALIDATED_METHODS.includes(m), m);
 });
 
