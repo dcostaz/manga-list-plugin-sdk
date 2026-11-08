@@ -17,6 +17,8 @@ export const TRANSITIONAL_READ_METHODS: readonly string[];
 export const OFFER_DOMAIN: Readonly<Record<string, string>>;
 export const DOMAIN_SIDE: Readonly<Record<string, 'system' | 'user'>>;
 export const HOST_READING_STATUSES: readonly string[];
+export const PROGRESS_AXIS_CATALOG: readonly string[];
+export const PROGRESS_AXIS_SCALES: readonly string[];
 export const PLUGIN_ERROR_CODES: readonly string[];
 export const HOST_CONTRACT_VIOLATION: 'host_contract_violation';
 
