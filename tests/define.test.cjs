@@ -196,3 +196,39 @@ test('an explicit binding overrides the convention, and a missing client call is
     assert.deepEqual(await instance.search('x', undefined, callContext()), []);
     await assert.rejects(instance.getReadingList(callContext()), /no 'getReadingList' source call/);
 });
+
+test('under the convention, testCredentials asks the client when it can; a refusal is false, not a throw', async () => {
+    const { PluginError: PE } = require('../index.cjs');
+    const def = minimalDefinition({
+        methods: undefined,
+        mapping: {},
+        auth: { async exchange(/** @type {any} */ c) { return { tokens: { key: { value: c.key } } }; }, apply: (/** @type {any} */ t, /** @type {any} */ c) => c },
+        createClient: () => (/** @type {any} */ view) => ({
+            search: async () => [], getReadingList: async () => [],
+            testCredentials: async () => { if (view.credential.key !== 'good') throw new PE('credential_rejected', 'no'); return true; },
+        }),
+    });
+    def.manifest.capabilities = ['credential', 'search.query', 'sync.list'];
+    const d = defineTrackerPlugin(/** @type {any} */ (def));
+    const instance = await d.WrapperClass.init({ context: createStubContext() });
+    assert.equal(await instance.testCredentials({ key: 'good' }), true);
+    assert.equal(await instance.testCredentials({ key: 'bad' }), false);
+});
+
+test('testCredentials never lets a token kept for one credential answer for another', async () => {
+    let exchanges = 0;
+    const def = minimalDefinition({
+        methods: { search: async () => [], getReadingList: async () => [] },
+        auth: {
+            async exchange(/** @type {any} */ c, /** @type {any} */ { http }) { exchanges += 1; await http.get(`/check/${c.key}`); return { tokens: { t: { value: c.key } } }; },
+            apply: (/** @type {any} */ t, /** @type {any} */ c) => c,
+        },
+    });
+    def.manifest.capabilities = ['credential', 'search.query', 'sync.list'];
+    const d = defineTrackerPlugin(/** @type {any} */ (def));
+    const axios = createStubAxios((c) => (String(c.url).endsWith('/good') ? { status: 200 } : { status: 401 }));
+    const instance = await d.WrapperClass.init({ context: createStubContext({ axios }) });
+    assert.equal(await instance.testCredentials({ key: 'good' }), true);
+    assert.equal(await instance.testCredentials({ key: 'revoked' }), false);
+    assert.equal(exchanges, 2, 'each test exchanged its own credential');
+});

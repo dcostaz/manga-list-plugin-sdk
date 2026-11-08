@@ -497,7 +497,9 @@ async function runConformance(options) {
         await check(`perEntry.${method}-never-throws-for-the-batch`, 'behaviour', '§2.1', async () => {
             axios.setHandler(() => ({ status: 503, data: {} }));
             try {
-                const result = await invoke(method, args, makeContext());
+                // A fresh identity and scope: an answer the plugin cached for an earlier case (legitimately, per
+                // scope) must not stand in for a source that is failing now.
+                const result = await invoke(method, args, makeContext({ identity: `slot-label-batch-${method}`, scope: `user-label-batch-${method}` }));
                 const ids = inputIdsOf(args) || [];
                 if (!Array.isArray(result) || result.length !== ids.length) return [`expected ${ids.length} per-entry results, got ${JSON.stringify(result)}`];
                 return result.filter((/** @type {any} */ r) => r.success !== false).map((/** @type {any} */ r) => `entry '${r.pluginEntryId}' reported success while the source failed`);
