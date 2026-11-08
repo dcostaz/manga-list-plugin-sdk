@@ -13,8 +13,10 @@ plugin was built against; the host compares majors and refuses a newer minor tha
 A plugin repo takes it as a devDependency pinned to the contract's tag; the host as a dependency, the same way:
 
 ```json
-"@manga-list/plugin-sdk": "github:dcostaz/manga-list-plugin-sdk#v4.0.0"
+"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.0.0"
 ```
+
+Keep the lockfile's `resolved` URL on `git+https://`: npm may write `git+ssh://`, which a CI runner without SSH keys cannot fetch.
 
 A plugin's zip never bundles it: the host places its own installed copy beside the plugin runtime root, where a
 plugin's `require('@manga-list/plugin-sdk')` finds it.
