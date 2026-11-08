@@ -8,9 +8,12 @@ import type { PluginCallContext, PluginModuleDescriptor } from './plugintypedefs
 
 export const PLUGIN_CONTRACT_VERSION: string;
 export const PLUGIN_SETTINGS_CONTRACT_VERSION: string;
+export const MIN_ADAPTER_CONTRACT_VERSION: string;
 export const KNOWN_CAPABILITIES: readonly string[];
 export const OPERATION_OFFERS: readonly string[];
 export const OFFER_METHODS: Readonly<Record<string, readonly string[]>>;
+export const OWN_READ_METHODS: readonly string[];
+export const TRANSITIONAL_READ_METHODS: readonly string[];
 export const OFFER_DOMAIN: Readonly<Record<string, string>>;
 export const DOMAIN_SIDE: Readonly<Record<string, 'system' | 'user'>>;
 export const HOST_READING_STATUSES: readonly string[];
@@ -63,6 +66,10 @@ export interface ScopedCache {
 
 export interface CallViewBase extends Omit<PluginCallContext, 'credential'> {
   credential: any;
+  /** A `file-path` plugin's path grant for this call (A19); null for a `credential` plugin. */
+  paths: Record<string, string> | null;
+  /** The host's SQLite driver constructor (`context.sqlite`, A24), or null. */
+  sqlite: any;
   http: CallHttp;
   cache: ScopedCache;
   settings: Record<string, unknown>;
@@ -79,18 +86,23 @@ export interface SettingsDocument {
   settings: Record<string, unknown>;
 }
 
-export interface TrackerDefinition {
+export interface PluginDefinition {
   manifest: Record<string, any>;
   settings?: SettingsDocument | null;
   auth?: AuthStrategy | null;
-  createClient(deps: { settings: Record<string, unknown>; utils: Record<string, any>; pluginName: string; addNormalizer(fn: (response: any) => void): void }): (view: CallViewBase) => any;
+  createClient(deps: { settings: Record<string, unknown>; utils: Record<string, any>; sqlite: any; pluginName: string; addNormalizer(fn: (response: any) => void): void }): (view: CallViewBase) => any;
   methods?: Record<string, (view: CallView, ...args: any[]) => Promise<any>>;
   mapping?: Record<string, (raw: any, ...args: any[]) => any>;
   initialize?(deps: { settings: Record<string, unknown> }): Promise<{ status: string; message?: string } | void>;
   getStatus?(deps: { settings: Record<string, unknown> }): Promise<{ status: string; message?: string }> | { status: string; message?: string };
 }
 
-export function defineTrackerPlugin(definition: TrackerDefinition): Readonly<PluginModuleDescriptor>;
+export type TrackerDefinition = PluginDefinition;
+
+/** One definition for every plugin type (Decision 5); the two named forms are aliases. */
+export function definePlugin(definition: PluginDefinition): Readonly<PluginModuleDescriptor>;
+export function defineTrackerPlugin(definition: PluginDefinition): Readonly<PluginModuleDescriptor>;
+export function defineAdapterPlugin(definition: PluginDefinition): Readonly<PluginModuleDescriptor>;
 
 export function perEntry<TEntry, TResult extends object>(
   entries: TEntry[],
@@ -106,4 +118,3 @@ export const VALIDATED_METHODS: readonly string[];
 export function createSettingsClass(embedded: SettingsDocument | null): Function;
 export function assertSettingsDocument(doc: unknown, where: string): SettingsDocument;
 
-export class FilterNotApplicableError extends Error {}

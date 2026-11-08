@@ -1,6 +1,6 @@
 {
   "name": "@manga-list/plugin-sdk",
-  "version": "4.0.0",
+  "version": "4.1.0",
   "description": "The manga-list plugin runtime: builds a plugin's contract facade from its definition, owns HTTP discipline, per-call credentials and conformance checks. Host-owned; contract version = this package's version.",
   "main": "index.cjs",
   "types": "types/index.d.ts",

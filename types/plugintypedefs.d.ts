@@ -81,6 +81,28 @@ export interface PluginManifest {
   retrieveOptions?: { requiresCredential: boolean };
   searchOptions?: { requiresCredential: boolean };
   credentialOptions?: { fields: PluginCredentialField[] };
+  /** A `file-path` plugin: the settings that make up its path grant (§1.4, A19). */
+  filePathOptions?: { fields: PluginFilePathField[] };
+  /** A `filterable` plugin: the fields of its Filters Panel section (§1.4, A21). */
+  filterSchema?: Record<string, PluginFilterField>;
+  filterPresets?: Array<{ id: string; label: string; fields: Record<string, unknown> }>;
+  workspace?: { entry?: string; [key: string]: unknown };
+}
+
+export interface PluginFilePathField {
+  /** A setting of the plugin's settings document. */
+  key: string;
+  label: string;
+  kind: 'file' | 'directory';
+}
+
+/** A `file-path` plugin's credential: one absolute path per `filePathOptions.fields` key (A19). */
+export type PluginPathGrant = Record<string, string>;
+
+export interface PluginFilterField {
+  type: 'enum' | 'boolean' | 'text';
+  label?: string;
+  values?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -310,4 +332,33 @@ export interface PluginPageSummary {
   pageKey: string;
   pageNumber: number;
   sizeHint?: number;
+}
+
+// ---------------------------------------------------------------------------
+// Filtering (§2 `filterable`, A21) and the own-data reads (§5.4, A22)
+// ---------------------------------------------------------------------------
+
+export interface PluginFilterSpec {
+  fields: Record<string, unknown>;
+  presetId?: string;
+}
+
+export interface PluginFilterResult {
+  applicable: boolean;
+  pluginEntryIds: string[];
+}
+
+/** One entry of the plugin's own catalog: the three named fields are the host's; the rest is the plugin's surface's. */
+export interface PluginWorkspaceEntry {
+  pluginEntryId: string;
+  title: string;
+  altTitles?: string[];
+  [field: string]: unknown;
+}
+
+export interface PluginEntryPage {
+  entries: PluginWorkspaceEntry[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
 }

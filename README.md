@@ -13,7 +13,7 @@ plugin was built against; the host compares majors and refuses a newer minor tha
 A plugin repo takes it as a devDependency pinned to the contract's tag; the host as a dependency, the same way:
 
 ```json
-"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.0.0"
+"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.1.0"
 ```
 
 Keep the lockfile's `resolved` URL on `git+https://`: npm may write `git+ssh://`, which a CI runner without SSH keys cannot fetch.
@@ -21,22 +21,22 @@ Keep the lockfile's `resolved` URL on `git+https://`: npm may write `git+ssh://`
 A plugin's zip never bundles it: the host places its own installed copy beside the plugin runtime root, where a
 plugin's `require('@manga-list/plugin-sdk')` finds it.
 
-## What a tracker writes
+## What a plugin writes
 
 ```
 client-<id>.cjs   L4  reach and exchange: endpoints, the auth strategy, throttle names, pagination
 mapping-<id>.cjs  L3b map: pure functions, source shape ↔ contract DTO
-plugin-<id>.cjs   L3a declare and bind: defineTrackerPlugin({ manifest, settings, auth, createClient, methods })
+plugin-<id>.cjs   L3a declare and bind: definePlugin({ manifest, settings, auth, createClient, methods })
 ```
 
 ```js
-const { defineTrackerPlugin, perEntry } = require('@manga-list/plugin-sdk');
+const { definePlugin, perEntry } = require('@manga-list/plugin-sdk');
 
-module.exports = defineTrackerPlugin({
+module.exports = definePlugin({
   manifest: require('./plugin-package.json'),
   settings: require('./<id>-api-settings.json'),   // { metadata, schema, settings }
   auth,                                             // { exchange, apply, isAuthFailure? }, or null
-  createClient,                                     // ({ settings, utils, addNormalizer }) => (view) => client
+  createClient,                                     // ({ settings, utils, sqlite, addNormalizer }) => (view) => client
   methods: {                                        // keyed by contract METHOD name
     search:         async (view, query, options) => map.candidates(await view.client.search(query, options)),
     getReadingList: async (view) => map.readingList(await view.client.library()),   // sync.list + watch.list
@@ -46,8 +46,14 @@ module.exports = defineTrackerPlugin({
 // → { pluginName, displayName, WrapperClass, SettingsClass }
 ```
 
+- **One definition for every plugin type.** `definePlugin` builds a tracker and an adapter alike
+  (`defineTrackerPlugin` and `defineAdapterPlugin` are aliases); what must be bound follows the manifest: its
+  access offer (exactly one, `credential` or `file-path`), each operation offer, `filterable`, and a
+  `workspace.entry` block. An adapter is built for contract 4.1.0 or later.
 - **Bindings are keyed by method.** The SDK holds the contract's offer → method table and fails at `require`
   time, by name, for a declared offer whose method has no binding and for a binding no declared offer needs.
+  A `workspace.entry` block needs `listEntries` and `getEntry` (contract §5.4); `pullProgressBatch` is the one
+  transitional read a plugin may still bind.
   `sync.list` and `watch.list` share `getReadingList`: bind it once; the plugin never knows which offer called.
 - **Bindings by convention.** Give `mapping` instead of (or beside) `methods`, and every method without an explicit
   binding is bound as `mapping[method](await view.client[method](...args), ...args)`; an array method calls the
@@ -55,9 +61,18 @@ module.exports = defineTrackerPlugin({
   after it, and the mapping one function per method whose answer needs translating. An explicit binding always
   wins. The template uses the convention, so a new tracker edits only its client, mapping, manifest and settings.
 - **The per-call view.** Every method's last argument from the host is `callContext { credential, identity,
-  scope, signal }`; the facade pops it and hands the binding `view = { client, http, cache, credential,
-  identity, scope, signal, settings, utils }`. `view.http` is the instance's HTTP bound to this call;
+  scope, signal }`; the facade pops it and hands the binding `view = { client, http, cache, credential, paths,
+  sqlite, identity, scope, signal, settings, utils }`. `view.http` is the instance's HTTP bound to this call;
   `view.client` is your client built over that view. Nothing is retained after the call.
+- **A `file-path` plugin's paths** arrive in each call (A19): the manifest's `filePathOptions.fields` names them,
+  `callContext.credential` carries `{ [key]: absolute path }`, and the binding reads `view.paths`. Those keys are
+  removed from `view.settings`, so a path is never read from settings. A call without the grant is
+  `host_contract_violation`. A local database is opened through `view.sqlite`, the host's driver
+  (`context.sqlite`); a network call goes through `view.http`, never a global `fetch`.
+- **`queryFilter`** (`filterable`) returns the matching ids; the facade answers `{ applicable, pluginEntryIds }`,
+  and a spec naming no `filterSchema` field is `{ applicable: false, pluginEntryIds: [] }` without calling the
+  binding. **`getEntry`** throwing `not_found` answers `null`.
+- **An unreadable source is `source_error`**, never an empty answer (A25).
 - **`http`** wraps the host's injected HTTP client with the plugin's settings: timeouts
   (`connection.timeout.*`), keep-alive pool, retry with backoff, `429` + `Retry-After`, the global limiter,
   per-endpoint throttle (`api.endpoints.<name>.throttle`, pass `endpoint: '<name>'`), circuit breaker, and the
@@ -80,8 +95,11 @@ module.exports = defineTrackerPlugin({
 const { runConformance, createStubAxios, createStubContext, callContext } = require('@manga-list/plugin-sdk/testing');
 ```
 
-`runConformance({ WrapperClass, manifest, descriptor, initOptions, axios, context })` runs the contract cases
-against a loaded `WrapperClass` — built by the SDK or by hand — and returns `{ passed, failed }`.
+`runConformance({ WrapperClass, manifest, descriptor, initOptions, axios, context, credentials })` runs the
+contract cases against a loaded `WrapperClass` — built by the SDK or by hand — and returns `{ passed, failed }`.
+For a `file-path` plugin, `credentials` are two path grants over fixture files, and the adapter cases run: the
+grant required on every call, an unreadable source never answered empty, an unknown summary entry `not_found`,
+a filter naming no schema field not applicable, `getEntry` of an unknown id `null`.
 
 ```
 npm test          # node --test
