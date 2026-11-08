@@ -8,6 +8,17 @@ cannot expose a method the contract does not name. Host-owned; built by
 **The SDK's version is the contract version.** A manifest's `pluginContractVersion` names the SDK version the
 plugin was built against; the host compares majors and refuses a newer minor than its own.
 
+## Install
+
+A plugin repo takes it as a devDependency pinned to the contract's tag; the host as a dependency, the same way:
+
+```json
+"@manga-list/plugin-sdk": "github:dcostaz/manga-list-plugin-sdk#v4.0.0"
+```
+
+A plugin's zip never bundles it: the host places its own installed copy beside the plugin runtime root, where a
+plugin's `require('@manga-list/plugin-sdk')` finds it.
+
 ## What a tracker writes
 
 ```
