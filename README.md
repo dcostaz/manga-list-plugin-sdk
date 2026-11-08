@@ -36,6 +36,11 @@ module.exports = defineTrackerPlugin({
 - **Bindings are keyed by method.** The SDK holds the contract's offer → method table and fails at `require`
   time, by name, for a declared offer whose method has no binding and for a binding no declared offer needs.
   `sync.list` and `watch.list` share `getReadingList`: bind it once; the plugin never knows which offer called.
+- **Bindings by convention.** Give `mapping` instead of (or beside) `methods`, and every method without an explicit
+  binding is bound as `mapping[method](await view.client[method](...args), ...args)`; an array method calls the
+  client once per entry through `perEntry`. The client then exposes one source call per contract method, named
+  after it, and the mapping one function per method whose answer needs translating. An explicit binding always
+  wins. The template uses the convention, so a new tracker edits only its client, mapping, manifest and settings.
 - **The per-call view.** Every method's last argument from the host is `callContext { credential, identity,
   scope, signal }`; the facade pops it and hands the binding `view = { client, http, cache, credential,
   identity, scope, signal, settings, utils }`. `view.http` is the instance's HTTP bound to this call;

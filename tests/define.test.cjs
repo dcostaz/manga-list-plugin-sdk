@@ -164,3 +164,35 @@ test('createClient runs once per instance; the client is built per call over the
     assert.equal(created, 1);
     assert.deepEqual(views.map((v) => [v.identity, v.scope]), [['i1', 's1'], ['i2', 's2']]);
 });
+
+test('with a mapping, unbound methods are bound by convention: client.<method> → mapping.<method>, array methods per entry', async () => {
+    const def = minimalDefinition({
+        methods: undefined,
+        mapping: {
+            /** @param {any[]} raw */
+            search: (raw) => raw.map((r) => ({ pluginEntryId: String(r.id), title: r.name, confidence: 1, canonicalUrl: null })),
+        },
+        createClient: () => () => ({
+            search: async () => [{ id: 7, name: 'Seven' }],
+            getReadingList: async () => [],
+        }),
+    });
+    def.manifest.capabilities = ['search.query', 'sync.list', 'subscribe.remove'];
+    const client = { search: async () => [{ id: 7, name: 'Seven' }], getReadingList: async () => [], unsubscribe: async (/** @type {string} */ id) => { if (id === 'bad') throw new (require('../index.cjs').PluginError)('offline', 'down'); } };
+    def.createClient = () => () => client;
+    const d = defineTrackerPlugin(/** @type {any} */ (def));
+    const instance = await d.WrapperClass.init({ context: createStubContext() });
+    assert.deepEqual(await instance.search('x', undefined, callContext()), [{ pluginEntryId: '7', title: 'Seven', confidence: 1, canonicalUrl: null }]);
+    assert.deepEqual(await instance.getReadingList(callContext()), [], 'no mapping function: the client answer as is');
+    const out = await instance.unsubscribe(['ok', 'bad'], callContext());
+    assert.deepEqual(out.map((/** @type {any} */ r) => [r.pluginEntryId, r.success]), [['ok', true], ['bad', false]]);
+});
+
+test('an explicit binding overrides the convention, and a missing client call is named', async () => {
+    const def = minimalDefinition({ mapping: {}, createClient: () => () => ({}) });
+    def.methods = { search: async () => [] };
+    const d = defineTrackerPlugin(/** @type {any} */ (def));
+    const instance = await d.WrapperClass.init({ context: createStubContext() });
+    assert.deepEqual(await instance.search('x', undefined, callContext()), []);
+    await assert.rejects(instance.getReadingList(callContext()), /no 'getReadingList' source call/);
+});
