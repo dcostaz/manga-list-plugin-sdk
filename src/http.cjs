@@ -371,6 +371,9 @@ function createHttpRuntime(options) {
         const pool = poolAgents();
 
         for (let attempt = 1; ; attempt += 1) {
+            // An aborted call takes nothing more: no limiter place, no throttle slot. Its remaining work (the rest of
+            // a batch whose ceiling passed) would otherwise reserve slots no request uses, and starve the next call.
+            if (signal && signal.aborted) throw abortedError();
             circuit.check();
             const release = await limiter.acquire(signal);
             try {
@@ -379,7 +382,13 @@ function createHttpRuntime(options) {
                     const key = endpoint || '__default';
                     const at = Math.max(now(), nextSlot.get(key) || 0);
                     nextSlot.set(key, at + delay);
-                    await sleep(at - now(), signal);
+                    try {
+                        await sleep(at - now(), signal);
+                    } catch (error) {
+                        // Aborted while waiting: hand the unused slot back when it is still the latest one reserved.
+                        if (nextSlot.get(key) === at + delay) nextSlot.set(key, at);
+                        throw error;
+                    }
                 }
                 if (signal && signal.aborted) throw abortedError();
                 /** @type {RequestConfig} */
