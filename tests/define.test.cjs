@@ -214,3 +214,21 @@ test('under the convention, testCredentials asks the client when it can; a refus
     assert.equal(await instance.testCredentials({ key: 'good' }), true);
     assert.equal(await instance.testCredentials({ key: 'bad' }), false);
 });
+
+test('testCredentials never lets a token kept for one credential answer for another', async () => {
+    let exchanges = 0;
+    const def = minimalDefinition({
+        methods: { search: async () => [], getReadingList: async () => [] },
+        auth: {
+            async exchange(/** @type {any} */ c, /** @type {any} */ { http }) { exchanges += 1; await http.get(`/check/${c.key}`); return { tokens: { t: { value: c.key } } }; },
+            apply: (/** @type {any} */ t, /** @type {any} */ c) => c,
+        },
+    });
+    def.manifest.capabilities = ['credential', 'search.query', 'sync.list'];
+    const d = defineTrackerPlugin(/** @type {any} */ (def));
+    const axios = createStubAxios((c) => (String(c.url).endsWith('/good') ? { status: 200 } : { status: 401 }));
+    const instance = await d.WrapperClass.init({ context: createStubContext({ axios }) });
+    assert.equal(await instance.testCredentials({ key: 'good' }), true);
+    assert.equal(await instance.testCredentials({ key: 'revoked' }), false);
+    assert.equal(exchanges, 2, 'each test exchanged its own credential');
+});

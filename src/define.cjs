@@ -326,6 +326,7 @@ function defineTrackerPlugin(definition) {
 
     if (declaresCredential) {
         const binding = methods.testCredentials;
+        let testRuns = 0;
         /**
          * testCredentials(credential, callContext?) → boolean; false for a refused credential, never a throw
          * for that; a transport failure throws a PluginError.
@@ -335,9 +336,13 @@ function defineTrackerPlugin(definition) {
          */
         proto.testCredentials = async function testCredentials(credential, ctx) {
             const st = stateOf(this);
+            // The credential under test is not the slot's: it gets an identity of its own, used once, so no token
+            // it mints is kept, and no token kept for another credential answers for it.
+            testRuns += 1;
+            const identity = `credential-test:${testRuns}:${Math.random().toString(36).slice(2)}`;
             const call = ctx === undefined
-                ? { credential, identity: 'credential-test', scope: 'system', signal: null }
-                : { ...readCallContext(ctx), credential };
+                ? { credential, identity, scope: 'system', signal: null }
+                : { ...readCallContext(ctx), credential, identity };
             const view = viewFor(st, call);
             try {
                 if (binding) {
@@ -353,6 +358,8 @@ function defineTrackerPlugin(definition) {
             } catch (error) {
                 if (isPluginError(error) && error.code === 'credential_rejected') return false;
                 throw toPluginError(error);
+            } finally {
+                st.runtime.tokens.invalidate(identity);
             }
         };
     }
