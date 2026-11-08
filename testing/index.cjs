@@ -108,7 +108,7 @@ function createGenericSource() {
     function handler(config) {
         const url = String(config.url || '');
         const method = String(config.method || 'get').toLowerCase();
-        if (method === 'post' && /login|token|auth|session/i.test(url)) {
+        if ((method === 'post' || method === 'put') && /login|token|auth|session/i.test(url)) {
             minted += 1;
             const token = `generic-token-${minted}`;
             tokenPhase.set(token, phase);
