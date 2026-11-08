@@ -3,7 +3,7 @@
 The plugin side of the manga-list host capability contract (`docs/plugins/host-capability-contract.md` in the
 host repo). A plugin ships a **definition**; the SDK builds the descriptor the host's loader expects, so a plugin
 cannot expose a method the contract does not name. Host-owned; built by
-`docs/plans/Plan-2026Q4-tracker-plugin-standardization.md` (Phase 1).
+`docs/history/Plan-2026Q4-tracker-plugin-standardization.md` (Phase 1).
 
 **The SDK's version is the contract version.** A manifest's `pluginContractVersion` names the SDK version the
 plugin was built against; the host compares majors and refuses a newer minor than its own.

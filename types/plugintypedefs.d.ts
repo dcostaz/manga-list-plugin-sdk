@@ -1,5 +1,5 @@
 /**
- * Type definitions for manga-list plugin packages, contract 4.0.0
+ * Type definitions for manga-list plugin packages, contract 4.1.0
  * (docs/plugins/host-capability-contract.md in the host repo; §2.6 defines the result shapes).
  *
  * Moved from manga-list-plugin-template/types/plugintypedefs.d.ts by Plan-2026Q4-tracker-plugin-standardization
