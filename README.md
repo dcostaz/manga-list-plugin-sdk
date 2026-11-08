@@ -50,7 +50,7 @@ module.exports = defineTrackerPlugin({
   per-endpoint throttle (`api.endpoints.<name>.throttle`, pass `endpoint: '<name>'`), circuit breaker, and the
   call's abort signal. Failures are `PluginError`s with the contract's codes.
 - **`http.authed(fn)` / `http.authedRequest(config)`** — the one 401 shape: token set from the in-memory token
-  cache (keyed by `identity`), else `auth.exchange(credential, { http, previous, reason })`; `auth.apply(tokens,
+  cache (keyed by `identity`), else `auth.exchange(credential, { http, settings, previous, reason })`; `auth.apply(tokens,
   config)` per request; on an auth failure, re-exchange once under the same credential and replay once.
   `previous` carries the old set, so a refresh token survives an expired access token. A client may register
   response normalizers (`addNormalizer`), never a replay.

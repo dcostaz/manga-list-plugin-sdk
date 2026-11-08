@@ -343,7 +343,7 @@ function defineTrackerPlugin(definition) {
                 if (binding) {
                     return (await binding(view, credential)) === true;
                 }
-                await /** @type {import('./http.cjs').AuthStrategy} */ (auth).exchange(credential, { http: view.http, previous: null, reason: 'initial' });
+                await /** @type {import('./http.cjs').AuthStrategy} */ (auth).exchange(credential, { http: view.http, settings: st.settings, previous: null, reason: 'initial' });
                 return true;
             } catch (error) {
                 if (isPluginError(error) && error.code === 'credential_rejected') return false;

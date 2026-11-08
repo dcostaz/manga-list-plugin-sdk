@@ -25,7 +25,7 @@ const { TokenCache } = require('./tokencache.cjs');
 
 /**
  * @typedef {{
- *   exchange(credential: unknown, ctx: { http: CallHttp, previous: TokenSet | null, reason: 'initial' | 'expired' | 'rejected' }): Promise<{ tokens: TokenSet }>,
+ *   exchange(credential: unknown, ctx: { http: CallHttp, settings: Record<string, unknown>, previous: TokenSet | null, reason: 'initial' | 'expired' | 'rejected' }): Promise<{ tokens: TokenSet }>,
  *   apply(tokens: TokenSet, config: RequestConfig): RequestConfig,
  *   isAuthFailure?(error: unknown): boolean
  * }} AuthStrategy
@@ -444,7 +444,7 @@ function createHttpRuntime(options) {
                     /** @param {'initial' | 'expired' | 'rejected'} reason */
                     const exchange = (reason) => tokens.singleFlight(identity, async () => {
                         const previous = tokens.getAny(identity);
-                        const out = await auth.exchange(binding.credential, { http: call, previous, reason });
+                        const out = await auth.exchange(binding.credential, { http: call, settings: options.settings || {}, previous, reason });
                         if (!out || typeof out !== 'object' || !out.tokens || typeof out.tokens !== 'object') {
                             throw new PluginError('source_error', 'auth.exchange() returned no tokens');
                         }
