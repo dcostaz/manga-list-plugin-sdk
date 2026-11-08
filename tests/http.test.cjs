@@ -101,6 +101,37 @@ test('the signal aborts a throttle wait', async () => {
     await assert.rejects(http.get('/b', { endpoint: 'feed' }), (e) => isPluginError(e) && e.code === 'offline');
 });
 
+test('an aborted call reserves no throttle slot: the next call is not starved by it', async () => {
+    const axios = createStubAxios();
+    const runtime = createHttpRuntime({ axios, settings: base({ 'api.endpoints.feed.throttle': 50 }) });
+    const aborted = new AbortController();
+    const first = runtime.bind({ ...bindArgs(), signal: aborted.signal });
+    await first.get('/a', { endpoint: 'feed' });
+    aborted.abort();
+    // The rest of an aborted batch: each request fails at once and takes no slot.
+    for (let i = 0; i < 20; i += 1) {
+        await assert.rejects(first.get(`/z${i}`, { endpoint: 'feed' }), (e) => isPluginError(e) && e.code === 'offline');
+    }
+    const next = runtime.bind(bindArgs());
+    const started = Date.now();
+    await next.get('/b', { endpoint: 'feed' });
+    assert.ok(Date.now() - started < 200, `the next call waited ${Date.now() - started} ms; only one slot (50 ms) was taken`);
+    assert.equal(axios.calls.length, 2);
+});
+
+test('a throttle wait cut short by an abort hands its slot back', async () => {
+    const axios = createStubAxios();
+    const runtime = createHttpRuntime({ axios, settings: base({ 'api.endpoints.feed.throttle': 300 }) });
+    await runtime.bind(bindArgs()).get('/a', { endpoint: 'feed' });
+    const controller = new AbortController();
+    const waiting = runtime.bind({ ...bindArgs(), signal: controller.signal }).get('/b', { endpoint: 'feed' });
+    setTimeout(() => controller.abort(), 10);
+    await assert.rejects(waiting, (e) => isPluginError(e) && e.code === 'offline');
+    const started = Date.now();
+    await runtime.bind(bindArgs()).get('/c', { endpoint: 'feed' });
+    assert.ok(Date.now() - started < 450, `the next call waited ${Date.now() - started} ms; the aborted wait's slot was handed back`);
+});
+
 test('the circuit opens after repeated source failures and refuses calls while open', async () => {
     const axios = createStubAxios(() => ({ status: 503 }));
     const http = createHttpRuntime({
