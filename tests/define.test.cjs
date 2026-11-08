@@ -196,3 +196,21 @@ test('an explicit binding overrides the convention, and a missing client call is
     assert.deepEqual(await instance.search('x', undefined, callContext()), []);
     await assert.rejects(instance.getReadingList(callContext()), /no 'getReadingList' source call/);
 });
+
+test('under the convention, testCredentials asks the client when it can; a refusal is false, not a throw', async () => {
+    const { PluginError: PE } = require('../index.cjs');
+    const def = minimalDefinition({
+        methods: undefined,
+        mapping: {},
+        auth: { async exchange(/** @type {any} */ c) { return { tokens: { key: { value: c.key } } }; }, apply: (/** @type {any} */ t, /** @type {any} */ c) => c },
+        createClient: () => (/** @type {any} */ view) => ({
+            search: async () => [], getReadingList: async () => [],
+            testCredentials: async () => { if (view.credential.key !== 'good') throw new PE('credential_rejected', 'no'); return true; },
+        }),
+    });
+    def.manifest.capabilities = ['credential', 'search.query', 'sync.list'];
+    const d = defineTrackerPlugin(/** @type {any} */ (def));
+    const instance = await d.WrapperClass.init({ context: createStubContext() });
+    assert.equal(await instance.testCredentials({ key: 'good' }), true);
+    assert.equal(await instance.testCredentials({ key: 'bad' }), false);
+});

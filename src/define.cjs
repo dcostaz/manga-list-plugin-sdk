@@ -343,6 +343,11 @@ function defineTrackerPlugin(definition) {
                 if (binding) {
                     return (await binding(view, credential)) === true;
                 }
+                // Under the convention, a client that can ask the source whether the credential is good (a
+                // static key needs no exchange, so the exchange alone proves nothing) answers it.
+                if (mapping && view.client && typeof view.client.testCredentials === 'function') {
+                    return (await view.client.testCredentials(credential)) === true;
+                }
                 await /** @type {import('./http.cjs').AuthStrategy} */ (auth).exchange(credential, { http: view.http, settings: st.settings, previous: null, reason: 'initial' });
                 return true;
             } catch (error) {
