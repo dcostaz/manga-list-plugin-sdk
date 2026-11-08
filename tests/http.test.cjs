@@ -215,3 +215,112 @@ test('Retry-After parses seconds and HTTP dates', () => {
     assert.equal(parseRetryAfter(new Date(10000).toUTCString(), 4000), 6000);
     assert.equal(parseRetryAfter(undefined, 0), null);
 });
+
+// ── Phase 2: the operational settings change behaviour; the three auth shapes the trackers need ─────────
+
+test('the configured timeout fires: a source slower than connection.timeout.request is offline after its retries', async () => {
+    /** @type {number[]} */
+    const timeouts = [];
+    const axios = {
+        calls: /** @type {any[]} */ ([]),
+        /** @param {any} config */
+        async request(config) {
+            this.calls.push(config);
+            timeouts.push(config.timeout);
+            await new Promise((r) => setTimeout(r, config.timeout + 5));
+            const e = new Error(`timeout of ${config.timeout}ms exceeded`);
+            /** @type {any} */ (e).code = 'ECONNABORTED';
+            throw e;
+        },
+    };
+    const http = createHttpRuntime({ axios, settings: base({ 'connection.timeout.request': 15, 'retry.maxAttempts': 2 }) }).bind(bindArgs());
+    await assert.rejects(http.get('/slow'), (e) => isPluginError(e) && e.code === 'offline');
+    assert.deepEqual(timeouts, [15, 15]);
+});
+
+test('auth shape 1, a static key (MangaBaka): no exchange call, the key applied as a header', async () => {
+    const auth = {
+        /** @param {any} credential */
+        async exchange(credential) { return { tokens: { key: { value: credential.apiKey } } }; },
+        /** @param {any} tokens @param {any} config */
+        apply(tokens, config) { return { ...config, headers: { 'x-api-key': tokens.key.value } }; },
+    };
+    const axios = createStubAxios((c) => ({ status: 200, data: c.headers['x-api-key'] }));
+    const http = createHttpRuntime({ axios, settings: base(), auth }).bind(bindArgs({ apiKey: 'pat-1' }));
+    assert.equal((await http.authedRequest({ url: '/me/library' })).data, 'pat-1');
+    assert.equal(axios.calls.length, 1, 'no login call');
+});
+
+test('auth shape 2, password then refresh grants (MangaDex): refresh on expiry, password again when the refresh is refused', async () => {
+    /** @type {string[]} */
+    const grants = [];
+    let now = 0;
+    let accessCount = 0;
+    const auth = {
+        /** @param {any} credential @param {any} ctx */
+        async exchange(credential, { http, previous, reason }) {
+            const refresh = previous && previous.refresh ? previous.refresh.value : null;
+            if (refresh && reason === 'expired') {
+                try {
+                    const r = await http.post('/auth/refresh', { grant_type: 'refresh_token', refresh_token: refresh }, { endpoint: 'refreshToken' });
+                    grants.push('refresh');
+                    return { tokens: { access: { value: r.data.access_token, expiresAt: Date.now() + 900000 }, refresh: { value: r.data.refresh_token } } };
+                } catch {
+                    // a refused refresh falls back to the password grant below
+                }
+            }
+            const r = await http.post('/auth/token', { grant_type: 'password', username: credential.username, password: credential.password }, { endpoint: 'token' });
+            grants.push('password');
+            return { tokens: { access: { value: r.data.access_token, expiresAt: now }, refresh: { value: r.data.refresh_token } } };
+        },
+        /** @param {any} tokens @param {any} config */
+        apply(tokens, config) { return { ...config, headers: { Authorization: `Bearer ${tokens.access.value}` } }; },
+    };
+    let refuseRefresh = false;
+    const axios = createStubAxios((c) => {
+        if (c.url === '/auth/token') return { status: 200, data: { access_token: `acc-${++accessCount}`, refresh_token: 'ref-1' } };
+        if (c.url === '/auth/refresh') return refuseRefresh ? { status: 400 } : { status: 200, data: { access_token: `acc-${++accessCount}`, refresh_token: 'ref-2' } };
+        return { status: 200, data: c.headers.Authorization };
+    });
+    const http = createHttpRuntime({ axios, settings: base({ 'retry.enabled': false }), auth }).bind(bindArgs({ username: 'u', password: 'p' }));
+    now = Date.now() - 1; // the password grant's access token is already expired
+    await http.authedRequest({ url: '/user/follows' });
+    await http.authedRequest({ url: '/user/follows' });
+    assert.deepEqual(grants, ['password', 'refresh']);
+    refuseRefresh = true;
+    const runtime2 = createHttpRuntime({ axios, settings: base({ 'retry.enabled': false }), auth });
+    const http2 = runtime2.bind({ ...bindArgs({ username: 'u', password: 'p' }), identity: 'slot-b' });
+    await http2.authedRequest({ url: '/user/follows' });
+    await http2.authedRequest({ url: '/user/follows' });
+    assert.deepEqual(grants.slice(2), ['password', 'password'], 'a refused refresh falls back to the password grant');
+});
+
+test('auth shape 3, a session login (MangaUpdates): one login per identity, a 401 re-logs in once and replays once', async () => {
+    let logins = 0;
+    let revoked = false;
+    const auth = {
+        /** @param {any} credential @param {any} ctx */
+        async exchange(credential, { http }) {
+            const r = await http.request({ method: 'put', url: '/account/login', data: { username: credential.username, password: credential.password }, endpoint: 'login' });
+            logins += 1;
+            return { tokens: { session: { value: r.data.context.session_token } } };
+        },
+        /** @param {any} tokens @param {any} config */
+        apply(tokens, config) { return { ...config, headers: { Authorization: `Bearer ${tokens.session.value}` } }; },
+    };
+    const axios = createStubAxios((c) => {
+        if (c.url === '/account/login') return { status: 200, data: { context: { session_token: `s-${logins + 1}` } } };
+        if (revoked && c.headers.Authorization === 'Bearer s-1') return { status: 401 };
+        return { status: 200, data: c.headers.Authorization };
+    });
+    const runtime = createHttpRuntime({ axios, settings: base(), auth });
+    const http = runtime.bind(bindArgs({ username: 'u', password: 'p' }));
+    assert.equal((await http.authedRequest({ url: '/lists' })).data, 'Bearer s-1');
+    assert.equal((await http.authedRequest({ url: '/lists' })).data, 'Bearer s-1');
+    assert.equal(logins, 1);
+    revoked = true;
+    assert.equal((await http.authedRequest({ url: '/lists' })).data, 'Bearer s-2');
+    assert.equal(logins, 2);
+    await runtime.bind({ ...bindArgs({ username: 'v', password: 'q' }), identity: 'slot-b' }).authedRequest({ url: '/lists' });
+    assert.equal(logins, 3, 'another identity logs in on its own');
+});
