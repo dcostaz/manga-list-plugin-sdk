@@ -8,8 +8,26 @@
  */
 
 const { PLUGIN_ERROR_CODES } = require('./errors.cjs');
+const { ALT_TITLES_CONTRACT_VERSION } = require('./contract.cjs');
 
-/** @typedef {{ manifest?: { syncOptions?: any } | null, inputIds?: string[] | null }} ValidateOptions */
+/** @typedef {{ manifest?: { syncOptions?: any, pluginContractVersion?: string } | null, inputIds?: string[] | null }} ValidateOptions */
+
+/**
+ * Whether the manifest's contract version requires `altTitles` on a list entry (A30). With no manifest, the
+ * current contract's rule.
+ * @param {ValidateOptions} options
+ * @returns {boolean}
+ */
+function altTitlesRequired(options) {
+    const version = options && options.manifest ? options.manifest.pluginContractVersion : undefined;
+    if (typeof version !== 'string' || !version) return true;
+    const a = version.split('.').map((n) => Number.parseInt(n, 10) || 0);
+    const b = ALT_TITLES_CONTRACT_VERSION.split('.').map((n) => Number.parseInt(n, 10) || 0);
+    for (let i = 0; i < 3; i += 1) {
+        if ((a[i] || 0) !== (b[i] || 0)) return (a[i] || 0) > (b[i] || 0);
+    }
+    return true;
+}
 
 /**
  * @param {unknown} v
@@ -256,6 +274,16 @@ const VALIDATORS = {
             }
             if ('comparison' in e) {
                 problems.push(`${where}: 'comparison' left the contract (A13): the host compares`);
+            }
+            // A30: a package built at 4.2.0 or later carries altTitles (string[], or null where the source has none).
+            if (altTitlesRequired(options)) {
+                if (!('altTitles' in e)) {
+                    problems.push(`${where}: 'altTitles' is missing (A30: string[], or null where the source's list carries none)`);
+                } else if (e.altTitles !== null && (!Array.isArray(e.altTitles) || e.altTitles.some((t) => typeof t !== 'string'))) {
+                    problems.push(`${where}: 'altTitles' must be string[] or null (A30)`);
+                }
+            } else if (e.altTitles !== undefined && e.altTitles !== null && (!Array.isArray(e.altTitles) || e.altTitles.some((t) => typeof t !== 'string'))) {
+                problems.push(`${where}: 'altTitles' must be string[] or null when present`);
             }
             pullToken(e.status, options, where, problems);
         });

@@ -55,7 +55,7 @@ test('validators: a contract-shaped result has no problems; omitted nullable key
     assert.deepEqual(sdk.validateResult('pullProgress', { pluginEntryId: '1', status: null, chapter: 3, rating: null, lastUpdated: null }), []);
     assert.match(sdk.validateResult('pullProgress', { pluginEntryId: '1', chapter: 3 }).join(' '), /'status' is missing/);
     assert.match(sdk.validateResult('summarizeEntries', [{ pluginEntryId: '1', success: true, summary: { label: null, status: null, latestChapter: null, lastUpdated: null, linkState: 'linked' } }]).join(' '), /linkState/);
-    const listEntry = { pluginEntryId: '1', title: null, canonicalUrl: null, status: 'reading', chapter: null, rating: null, volume: null, listId: null, priority: null, lastUpdated: null };
+    const listEntry = { pluginEntryId: '1', title: null, canonicalUrl: null, status: 'reading', chapter: null, rating: null, volume: null, listId: null, priority: null, lastUpdated: null, altTitles: null };
     assert.deepEqual(sdk.validateResult('getReadingList', [listEntry]), []);
     assert.match(sdk.validateResult('getReadingList', [{ ...listEntry, comparison: {} }]).join(' '), /comparison/);
     const manifest = { syncOptions: { statusVocabulary: { pull: { reading: 'READING' } } } };
@@ -69,10 +69,21 @@ test('validators: per-entry arrays are one per input, in order, with contract er
     assert.match(sdk.validateResult('unsubscribe', [{ pluginEntryId: 'a', success: false, error: { code: 'unauthorized', message: 'x' } }]).join(' '), /closed set/);
 });
 
-test('every §2 method and own-data read has a validator; the transitional read has none (A23)', () => {
+test('every §2 method and own-data read has a validator; the transitional read has left the contract (A27)', () => {
     const methods = new Set([...Object.values(sdk.OFFER_METHODS).flat(), ...sdk.OWN_READ_METHODS]);
-    for (const m of sdk.TRANSITIONAL_READ_METHODS) assert.ok(!sdk.VALIDATED_METHODS.includes(m), m);
+    assert.equal(/** @type {any} */ (sdk).TRANSITIONAL_READ_METHODS, undefined);
     for (const m of methods) assert.ok(sdk.VALIDATED_METHODS.includes(m), m);
+});
+
+test('a list entry carries altTitles from 4.2.0; a package built earlier is validated without it (A30)', () => {
+    const entry = { pluginEntryId: '1', title: 'One', canonicalUrl: null, status: null, chapter: null, rating: null, volume: null, listId: null, priority: null, lastUpdated: null };
+    const at = (/** @type {string} */ v) => ({ manifest: { pluginContractVersion: v } });
+    assert.match(sdk.validateResult('getReadingList', [entry], at('4.2.0')).join(' '), /'altTitles' is missing/);
+    assert.deepEqual(sdk.validateResult('getReadingList', [{ ...entry, altTitles: null }], at('4.2.0')), []);
+    assert.deepEqual(sdk.validateResult('getReadingList', [{ ...entry, altTitles: ['Ichi'] }], at('4.2.0')), []);
+    assert.match(sdk.validateResult('getReadingList', [{ ...entry, altTitles: [1] }], at('4.2.0')).join(' '), /string\[\] or null/);
+    assert.deepEqual(sdk.validateResult('getReadingList', [entry], at('4.1.0')), []);
+    assert.match(sdk.validateResult('getReadingList', [{ ...entry, altTitles: 'One' }], at('4.1.0')).join(' '), /string\[\] or null when present/);
 });
 
 test('the scoped cache keys by scope, and a null host cache is a miss, never an error', async () => {

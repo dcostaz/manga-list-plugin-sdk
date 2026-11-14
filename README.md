@@ -13,7 +13,7 @@ plugin was built against; the host compares majors and refuses a newer minor tha
 A plugin repo takes it as a devDependency pinned to the contract's tag; the host as a dependency, the same way:
 
 ```json
-"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.1.0"
+"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.2.0"
 ```
 
 Keep the lockfile's `resolved` URL on `git+https://`: npm may write `git+ssh://`, which a CI runner without SSH keys cannot fetch.
@@ -52,8 +52,10 @@ module.exports = definePlugin({
   `workspace.entry` block. An adapter is built for contract 4.1.0 or later.
 - **Bindings are keyed by method.** The SDK holds the contract's offer → method table and fails at `require`
   time, by name, for a declared offer whose method has no binding and for a binding no declared offer needs.
-  A `workspace.entry` block needs `listEntries` and `getEntry` (contract §5.4); `pullProgressBatch` is the one
-  transitional read a plugin may still bind.
+  A `workspace.entry` block needs `listEntries` and `getEntry` (contract §5.4).
+- **What the manifest promises (4.2.0).** A plugin declaring `subscribe.add` declares `subscribe.remove` (A29);
+  `watchOptions.wholeHolding` is a boolean, `true` only where a `watch.list` plugin's system list is its source's
+  whole holding (A28); every `getReadingList` entry carries `altTitles`, `string[]` or `null` (A30).
   `sync.list` and `watch.list` share `getReadingList`: bind it once; the plugin never knows which offer called.
 - **Bindings by convention.** Give `mapping` instead of (or beside) `methods`, and every method without an explicit
   binding is bound as `mapping[method](await view.client[method](...args), ...args)`; an array method calls the

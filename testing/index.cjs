@@ -13,7 +13,7 @@
  */
 
 const path = require('path');
-const { OFFER_METHODS, OWN_READ_METHODS, TRANSITIONAL_READ_METHODS, HOST_READING_STATUSES } = require('../src/contract.cjs');
+const { OFFER_METHODS, OWN_READ_METHODS, HOST_READING_STATUSES } = require('../src/contract.cjs');
 const { validateResult } = require('../src/validators.cjs');
 const { isPluginError, HOST_CONTRACT_VIOLATION } = require('../src/errors.cjs');
 
@@ -365,8 +365,6 @@ async function runConformance(options) {
     for (const cap of capabilities) for (const m of OFFER_METHODS[cap] || []) if (!needed.has(m)) needed.set(m, cap);
     if (manifest.workspace && manifest.workspace.entry) for (const m of OWN_READ_METHODS) needed.set(m, 'workspace.entry');
     const proto = WrapperClass && WrapperClass.prototype ? WrapperClass.prototype : {};
-    /** The transitional read is tested for presence only, never validated (A23). */
-    const transitional = TRANSITIONAL_READ_METHODS.filter((m) => typeof proto[m] === 'function');
 
     // ── structure ───────────────────────────────────────────────────────────
     if (options.descriptor) {
@@ -386,7 +384,7 @@ async function runConformance(options) {
         ));
     }
     await check('IV.no-public-method-outside-the-contract', 'structure', 'IV.public-methods', () => {
-        const allowed = new Set([...needed.keys(), ...LIFECYCLE_METHODS, ...transitional]);
+        const allowed = new Set([...needed.keys(), ...LIFECYCLE_METHODS]);
         return Object.getOwnPropertyNames(proto)
             .filter((m) => typeof proto[m] === 'function' && !m.startsWith('_') && !allowed.has(m))
             .map((m) => `public method '${m}' is not named by the contract for the declared offers${m === 'compareProgress' ? ' (A13: the host compares)' : ''}`);

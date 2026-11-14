@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.1.0).
+ * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.2.0).
  *
  * The SDK's version IS the contract version (§1 header): a plugin's manifest names the SDK version it was
  * built against in `pluginContractVersion`, and the host compares majors and refuses a newer minor.
@@ -10,10 +10,12 @@
  * constant).
  */
 
-const PLUGIN_CONTRACT_VERSION = '4.1.0';
+const PLUGIN_CONTRACT_VERSION = '4.2.0';
 
 /** A17: the oldest contract an `adapter` package may be built against (its access, filter and own reads changed). */
 const MIN_ADAPTER_CONTRACT_VERSION = '4.1.0';
+/** A30: from this contract a list entry carries `altTitles` (string[] or null); a package built earlier is validated without it. */
+const ALT_TITLES_CONTRACT_VERSION = '4.2.0';
 const PLUGIN_SETTINGS_CONTRACT_VERSION = '1.0.0';
 
 // §1.1 Access offers — exactly one applies per plugin.
@@ -91,9 +93,6 @@ const OFFER_METHODS = Object.freeze({
 /** §5.4's own-data reads: no catalog string; a manifest `workspace.entry` block requires them (A22). */
 const OWN_READ_METHODS = Object.freeze(['listEntries', 'getEntry']);
 
-/** §5.4's one transitional read (A23), bound only by a plugin that already has it; unvalidated. */
-const TRANSITIONAL_READ_METHODS = Object.freeze(['pullProgressBatch']);
-
 /**
  * Each operation offer's governed domain (§1.2), and each domain's credential side (§2.5).
  * @type {Readonly<Record<string, string>>}
@@ -137,6 +136,7 @@ module.exports = {
     PLUGIN_CONTRACT_VERSION,
     PLUGIN_SETTINGS_CONTRACT_VERSION,
     MIN_ADAPTER_CONTRACT_VERSION,
+    ALT_TITLES_CONTRACT_VERSION,
 
     CAPABILITY_CREDENTIAL,
     CAPABILITY_FILE_PATH,
@@ -166,7 +166,6 @@ module.exports = {
     KNOWN_CAPABILITIES,
     OFFER_METHODS,
     OWN_READ_METHODS,
-    TRANSITIONAL_READ_METHODS,
     OFFER_DOMAIN,
     DOMAIN_SIDE,
     HOST_READING_STATUSES,
