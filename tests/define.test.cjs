@@ -233,3 +233,27 @@ test('testCredentials never lets a token kept for one credential answer for anot
     assert.equal(await instance.testCredentials({ key: 'revoked' }), false);
     assert.equal(exchanges, 2, 'each test exchanged its own credential');
 });
+
+test('a plugin declaring subscribe.add declares subscribe.remove, whatever its manifest version (A29)', () => {
+    const def = minimalDefinition();
+    def.manifest.capabilities = [...def.manifest.capabilities, 'subscribe.add'];
+    def.methods = { ...def.methods, subscribe: async () => [] };
+    assert.throws(() => defineTrackerPlugin(/** @type {any} */ (def)), /declaring 'subscribe\.add' declares 'subscribe\.remove' \(A29\)/);
+    def.manifest.capabilities = [...def.manifest.capabilities, 'subscribe.remove'];
+    def.methods = { ...def.methods, unsubscribe: async () => [] };
+    assert.doesNotThrow(() => defineTrackerPlugin(/** @type {any} */ (def)));
+});
+
+test('watchOptions.wholeHolding is a boolean, and only for a watch.list plugin (A28)', () => {
+    const withOptions = (/** @type {any} */ watchOptions, /** @type {string[]} */ capabilities = ['credential', 'search.query', 'sync.list', 'watch.list']) => {
+        const def = minimalDefinition();
+        def.manifest = { ...def.manifest, capabilities, watchOptions };
+        return () => defineTrackerPlugin(/** @type {any} */ (def));
+    };
+    assert.doesNotThrow(withOptions({ wholeHolding: true }));
+    assert.doesNotThrow(withOptions({ wholeHolding: false }));
+    assert.doesNotThrow(withOptions({}));
+    assert.throws(withOptions({ wholeHolding: 'yes' }), /wholeHolding\?: boolean/);
+    assert.throws(withOptions(null), /wholeHolding\?: boolean/);
+    assert.throws(withOptions({ wholeHolding: true }, ['credential', 'search.query', 'sync.list']), /does not declare/);
+});

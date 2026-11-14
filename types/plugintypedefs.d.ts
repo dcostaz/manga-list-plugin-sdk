@@ -1,5 +1,5 @@
 /**
- * Type definitions for manga-list plugin packages, contract 4.1.0
+ * Type definitions for manga-list plugin packages, contract 4.2.0
  * (docs/plugins/host-capability-contract.md in the host repo; §2.6 defines the result shapes).
  *
  * Moved from manga-list-plugin-template/types/plugintypedefs.d.ts by Plan-2026Q4-tracker-plugin-standardization
@@ -87,6 +87,8 @@ export interface PluginManifest {
   filterSchema?: Record<string, PluginFilterField>;
   filterPresets?: Array<{ id: string; label: string; fields: Record<string, unknown> }>;
   workspace?: { entry?: string; [key: string]: unknown };
+  /** A `watch.list` plugin: `wholeHolding` true where the system's list is the source's whole holding (§1.4, A28). */
+  watchOptions?: { wholeHolding?: boolean };
 }
 
 export interface PluginFilePathField {
@@ -250,6 +252,8 @@ export interface PluginReadingListEntry {
   listId: number | null;
   priority: number | null;
   lastUpdated: string | null;
+  /** The source's alternate titles, or null where its list carries none (A30; from 4.2.0). */
+  altTitles: string[] | null;
 }
 
 export interface PluginSubscribeEntry {

@@ -68,9 +68,8 @@ test('a workspace.entry block requires the two own-data reads (§5.4)', () => {
     assert.throws(() => definePlugin(adapterDefinition({ methods: b })), /'getEntry' with no binding/);
 });
 
-test('the transitional read may be bound; any other extra method may not (A23)', () => {
-    const withBatch = definePlugin(adapterDefinition({ methods: { ...bindings(), pullProgressBatch: async () => [] } }));
-    assert.equal(typeof withBatch.WrapperClass.prototype.pullProgressBatch, 'function');
+test('a binding no declared offer needs is refused; the transitional read is gone with it (A27)', () => {
+    assert.throws(() => definePlugin(adapterDefinition({ methods: { ...bindings(), pullProgressBatch: async () => [] } })), /'pullProgressBatch' serves no declared offer/);
     assert.throws(() => definePlugin(adapterDefinition({ methods: { ...bindings(), findMatches: async () => [] } })), /'findMatches' serves no declared offer/);
 });
 

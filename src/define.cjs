@@ -19,13 +19,15 @@ const {
     KNOWN_CAPABILITIES,
     OFFER_METHODS,
     OWN_READ_METHODS,
-    TRANSITIONAL_READ_METHODS,
     HOST_READING_STATUSES,
     PROGRESS_AXIS_CATALOG,
     PLUGIN_CONTRACT_VERSION,
     MIN_ADAPTER_CONTRACT_VERSION,
     CAPABILITY_CREDENTIAL,
     CAPABILITY_FILE_PATH,
+    CAPABILITY_SUBSCRIBE_ADD,
+    CAPABILITY_SUBSCRIBE_REMOVE,
+    CAPABILITY_WATCH_LIST,
 } = require('./contract.cjs');
 const { PluginError, isPluginError, toPluginError, HOST_CONTRACT_VIOLATION } = require('./errors.cjs');
 const { perEntry } = require('./results.cjs');
@@ -151,6 +153,20 @@ function definePlugin(definition) {
             pathKeys.push(field.key);
         }
     }
+    // A29: a title a plugin can put on a list it can take off again, whatever the manifest's version.
+    if (capabilities.includes(CAPABILITY_SUBSCRIBE_ADD) && !capabilities.includes(CAPABILITY_SUBSCRIBE_REMOVE)) {
+        throw fail(`a plugin declaring '${CAPABILITY_SUBSCRIBE_ADD}' declares '${CAPABILITY_SUBSCRIBE_REMOVE}' (A29)`);
+    }
+    // A28: whether the system's list is the source's whole holding; absent is false.
+    if (manifest.watchOptions !== undefined) {
+        const watchOptions = manifest.watchOptions;
+        if (!watchOptions || typeof watchOptions !== 'object' || ('wholeHolding' in watchOptions && typeof watchOptions.wholeHolding !== 'boolean')) {
+            throw fail(`watchOptions is { wholeHolding?: boolean } (§1.4, A28)`);
+        }
+        if (watchOptions.wholeHolding === true && !capabilities.includes(CAPABILITY_WATCH_LIST)) {
+            throw fail(`watchOptions.wholeHolding describes the '${CAPABILITY_WATCH_LIST}' read, which this plugin does not declare (A28)`);
+        }
+    }
     const filterSchema = manifest.filterSchema && typeof manifest.filterSchema === 'object' ? manifest.filterSchema : null;
     if (capabilities.includes('filterable') && (!filterSchema || !Object.keys(filterSchema).length)) {
         throw fail(`a 'filterable' plugin declares its fields in filterSchema (§1.4)`);
@@ -176,10 +192,6 @@ function definePlugin(definition) {
         for (const method of OWN_READ_METHODS) needed.add(method);
     }
     const bound = new Set(Object.keys(methods));
-    // §5.4's one transitional read: bound only by a plugin that already has it (A23).
-    for (const method of TRANSITIONAL_READ_METHODS) {
-        if (bound.has(method)) needed.add(method);
-    }
     if (declaresCredential && !bound.has('testCredentials')) {
         if (!auth) {
             throw fail(`a 'credential' plugin needs an auth strategy (definition.auth) or its own testCredentials binding`);

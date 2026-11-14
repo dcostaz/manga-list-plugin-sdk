@@ -9,11 +9,12 @@ import type { PluginCallContext, PluginModuleDescriptor } from './plugintypedefs
 export const PLUGIN_CONTRACT_VERSION: string;
 export const PLUGIN_SETTINGS_CONTRACT_VERSION: string;
 export const MIN_ADAPTER_CONTRACT_VERSION: string;
+/** A30: the contract from which a list entry carries `altTitles`. */
+export const ALT_TITLES_CONTRACT_VERSION: string;
 export const KNOWN_CAPABILITIES: readonly string[];
 export const OPERATION_OFFERS: readonly string[];
 export const OFFER_METHODS: Readonly<Record<string, readonly string[]>>;
 export const OWN_READ_METHODS: readonly string[];
-export const TRANSITIONAL_READ_METHODS: readonly string[];
 export const OFFER_DOMAIN: Readonly<Record<string, string>>;
 export const DOMAIN_SIDE: Readonly<Record<string, 'system' | 'user'>>;
 export const HOST_READING_STATUSES: readonly string[];
