@@ -69,7 +69,7 @@ function createStubAxios(handler) {
         return response;
     }
     /** @param {string} method */
-    const verb = (method) => (/** @type {string} */ url, /** @type {any} */ a, /** @type {any} */ b) => {
+    const verb = (method) => (/** @type {string} */ url, /** @type {any} */ a = undefined, /** @type {any} */ b = undefined) => {
         const withBody = method === 'post' || method === 'put' || method === 'patch';
         const config = withBody ? { ...(b || {}), method, url, data: a } : { ...(a || {}), method, url };
         return request(config);
