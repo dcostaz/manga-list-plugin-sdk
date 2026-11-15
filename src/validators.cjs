@@ -202,6 +202,15 @@ const VALIDATORS = {
         return perEntryArray(result, 'enrich', options, (entry, where, problems) => {
             if (!isRecord(entry.contribution)) {
                 problems.push(`${where}: a successful entry carries 'contribution'`);
+                return;
+            }
+            // A31 (4.3.0): a contribution answered from the plugin's cache says so, as a search candidate does (§2.4).
+            const c = /** @type {Record<string, unknown>} */ (entry.contribution);
+            if (c.cached !== undefined && typeof c.cached !== 'boolean') {
+                problems.push(`${where}.contribution: 'cached' must be a boolean when present`);
+            }
+            if (c.fetchedAt !== undefined && typeof c.fetchedAt !== 'string') {
+                problems.push(`${where}.contribution: 'fetchedAt' must be an ISO string when present`);
             }
         });
     },

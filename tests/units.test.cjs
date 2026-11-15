@@ -100,6 +100,39 @@ test('the scoped cache keys by scope, and a null host cache is a miss, never an 
     await assert.rejects(createScopedCache(host).bind('').get('k'), /no scope/);
 });
 
+test('A31: readThrough answers from the cache unless fresh, and says when the answer was fetched', async () => {
+    const host = createStubCache();
+    const cache = createScopedCache(host).bind('user-a');
+    let fetches = 0;
+    const fetch = async () => ({ title: `Solo ${++fetches}` });
+
+    const first = await cache.readThrough('series:1', { ttlSeconds: 60 }, fetch);
+    assert.deepEqual([first.value, first.cached], [{ title: 'Solo 1' }, false]);
+    assert.match(String(first.fetchedAt), /^\d{4}-\d{2}-\d{2}T/);
+
+    const again = await cache.readThrough('series:1', {}, fetch);
+    assert.deepEqual([again.value, again.cached, again.fetchedAt], [{ title: 'Solo 1' }, true, first.fetchedAt]);
+
+    const fresh = await cache.readThrough('series:1', { fresh: true }, fetch);
+    assert.deepEqual([fresh.value, fresh.cached, fetches], [{ title: 'Solo 2' }, false, 2]);
+
+    // A value cached before reads recorded their time is cached, its time unknown.
+    await cache.set('series:2', { title: 'Old' });
+    assert.deepEqual(await cache.readThrough('series:2', {}, fetch), { value: { title: 'Old' }, cached: true, fetchedAt: null });
+
+    // No host cache: every read is the source's.
+    const none = createScopedCache(null).bind('user-a');
+    assert.equal((await none.readThrough('series:1', {}, fetch)).cached, false);
+});
+
+test('A31: an enrich contribution may say it was cached, and when it was fetched', () => {
+    const ok = (/** @type {Record<string, unknown>} */ extra) => [{ pluginEntryId: '1', success: true, contribution: { pluginEntryId: '1', syncedAt: 'x', ...extra } }];
+    assert.deepEqual(sdk.validateResult('enrich', ok({})), []);
+    assert.deepEqual(sdk.validateResult('enrich', ok({ cached: true, fetchedAt: '2026-11-15T00:00:00.000Z' })), []);
+    assert.match(sdk.validateResult('enrich', ok({ cached: 'yes' })).join(' '), /'cached' must be a boolean/);
+    assert.match(sdk.validateResult('enrich', ok({ fetchedAt: 5 })).join(' '), /'fetchedAt' must be an ISO string/);
+});
+
 test('the token cache: a set is usable while unexpired; an expired one is kept as previous', () => {
     let now = 1000;
     const tokens = new TokenCache({ now: () => now });

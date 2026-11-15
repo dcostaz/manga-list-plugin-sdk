@@ -22,9 +22,19 @@
  * @typedef {{
  *   get(key: string): Promise<unknown>,
  *   set(key: string, value: unknown, ttlSeconds?: number): Promise<void>,
- *   delete(key: string): Promise<void>
+ *   delete(key: string): Promise<void>,
+ *   readThrough(key: string, options: { fresh?: boolean, ttlSeconds?: number }, fetch: () => Promise<unknown>): Promise<CachedRead>
  * }} ScopedCache
  */
+
+/**
+ * A read through the cache (contract 4.3.0, A31): the value, whether it came from the cache, and when it was fetched
+ * from the source (null for a value cached before reads recorded it).
+ * @typedef {{ value: unknown, cached: boolean, fetchedAt: string | null }} CachedRead
+ */
+
+/** Marks what `readThrough` stores, so a value cached before it is told apart. */
+const READ_THROUGH = 'manga-list.readThrough';
 
 /**
  * @param {string} scope
@@ -71,6 +81,30 @@ function createScopedCache(adapter) {
                         return;
                     }
                     await adapter.deleteValue(full);
+                },
+                /**
+                 * Read a source through the cache (A31): the cached value unless `fresh`, else the source's own answer,
+                 * stored with the time it was fetched. Every reader of a key reads it this way.
+                 * @param {string} key
+                 * @param {{ fresh?: boolean, ttlSeconds?: number }} options
+                 * @param {() => Promise<unknown>} fetch - the source's own answer
+                 * @returns {Promise<CachedRead>}
+                 */
+                async readThrough(key, options, fetch) {
+                    if (!(options && options.fresh === true)) {
+                        const hit = await this.get(key);
+                        if (hit !== null && hit !== undefined) {
+                            const stored = /** @type {Record<string, unknown>} */ (hit);
+                            if (typeof hit === 'object' && stored[READ_THROUGH] === 1) {
+                                return { value: stored.value, cached: true, fetchedAt: typeof stored.fetchedAt === 'string' ? stored.fetchedAt : null };
+                            }
+                            return { value: hit, cached: true, fetchedAt: null };
+                        }
+                    }
+                    const value = await fetch();
+                    const fetchedAt = new Date().toISOString();
+                    await this.set(key, { [READ_THROUGH]: 1, value, fetchedAt }, options ? options.ttlSeconds : undefined);
+                    return { value, cached: false, fetchedAt };
                 },
             };
         },

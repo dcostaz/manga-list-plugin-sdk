@@ -13,7 +13,7 @@ plugin was built against; the host compares majors and refuses a newer minor tha
 A plugin repo takes it as a devDependency pinned to the contract's tag; the host as a dependency, the same way:
 
 ```json
-"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.2.1"
+"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.3.0"
 ```
 
 Keep the lockfile's `resolved` URL on `git+https://`: npm may write `git+ssh://`, which a CI runner without SSH keys cannot fetch.
@@ -86,6 +86,11 @@ module.exports = definePlugin({
   `previous` carries the old set, so a refresh token survives an expired access token. A client may register
   response normalizers (`addNormalizer`), never a replay.
 - **`view.cache`** — the host cache keyed by the call's `scope` (the acting user, or `system`). Never a token.
+  `view.cache.readThrough(key, { fresh, ttlSeconds }, fetch)` (4.3.0) answers from the cache unless `fresh`, and
+  returns `{ value, cached, fetchedAt }`: read every key a plugin caches through it.
+- **A fresh `enrich` (4.3.0, A31).** `enrich(pluginEntryIds, options)` carries `options.refresh` when the user asks for
+  the source's own answer; a convention binding passes it to `client.enrich(id, options)`. A contribution answered
+  from the plugin's cache sets `cached: true` and `fetchedAt`, as a search candidate does (§2.4).
 - **Results** — `perEntry()` for array offers (one result per entry, in order; a failure stays with its
   entry), `PluginError` (closed codes: `not_found`, `credential_rejected`, `rate_limited`, `offline`,
   `source_error`), `markCached()` for §2.4, `notFoundEntry()`. Never classify a `PluginError` with

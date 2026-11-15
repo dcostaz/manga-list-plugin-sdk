@@ -10,7 +10,7 @@
  * constant).
  */
 
-const PLUGIN_CONTRACT_VERSION = '4.2.1';
+const PLUGIN_CONTRACT_VERSION = '4.3.0';
 
 /** A17: the oldest contract an `adapter` package may be built against (its access, filter and own reads changed). */
 const MIN_ADAPTER_CONTRACT_VERSION = '4.1.0';

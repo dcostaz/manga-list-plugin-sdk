@@ -180,6 +180,15 @@ export interface PluginLinkContribution {
   sourceLinks?: PluginSourceLink[];
   syncedAt: string;
   syncIntervalHint?: number;
+  /** A31 (4.3.0): set by a plugin that answered from its own cache. Both absent: the answer is live. */
+  cached?: boolean;
+  /** A31: the ISO time the cached answer was fetched from the source. */
+  fetchedAt?: string;
+}
+
+/** `enrich(pluginEntryIds, options?)`'s options (A31, 4.3.0): `refresh` answers from the source, never the plugin's cache. */
+export interface PluginEnrichOptions {
+  refresh?: boolean;
 }
 
 /** search.lookup's result: full detail for one known entry. */

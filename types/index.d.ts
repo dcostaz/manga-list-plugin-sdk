@@ -65,6 +65,15 @@ export interface ScopedCache {
   get(key: string): Promise<unknown>;
   set(key: string, value: unknown, ttlSeconds?: number): Promise<void>;
   delete(key: string): Promise<void>;
+  /** A31 (4.3.0): the cached value unless `fresh`, else the source's own, stored with the time it was fetched. */
+  readThrough(key: string, options: { fresh?: boolean; ttlSeconds?: number }, fetch: () => Promise<unknown>): Promise<CachedRead>;
+}
+
+/** A read through the cache: the value, whether it came from the cache, and when it was fetched (null when not known). */
+export interface CachedRead {
+  value: unknown;
+  cached: boolean;
+  fetchedAt: string | null;
 }
 
 export interface CallViewBase extends Omit<PluginCallContext, 'credential'> {
