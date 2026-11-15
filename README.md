@@ -41,6 +41,7 @@ module.exports = definePlugin({
     search:         async (view, query, options) => map.candidates(await view.client.search(query, options)),
     getReadingList: async (view) => map.readingList(await view.client.library()),   // sync.list + watch.list
     subscribe:      async (view, entries) => perEntry(entries, (e) => view.client.addToList(e)),
+    unsubscribe:    async (view, ids) => perEntry(ids, (id) => view.client.removeFromList(id)),
   },
 });
 // → { pluginName, displayName, WrapperClass, SettingsClass }
@@ -90,6 +91,9 @@ module.exports = definePlugin({
   `source_error`), `markCached()` for §2.4, `notFoundEntry()`. Never classify a `PluginError` with
   `instanceof`: use `isPluginError()` (two SDK copies exist at runtime).
 - **The settings class** is generic: no plugin writes one.
+- **The contract's tables** (`KNOWN_CAPABILITIES`, `OFFER_METHODS`, `OWN_READ_METHODS`, `OFFER_DOMAIN`,
+  `DOMAIN_SIDE`, the version constants) and `validateResult` are exported; the host dispatches and validates with
+  them.
 
 ## Testing
 
@@ -102,6 +106,9 @@ contract cases against a loaded `WrapperClass` — built by the SDK or by hand �
 For a `file-path` plugin, `credentials` are two path grants over fixture files, and the adapter cases run: the
 grant required on every call, an unreadable source never answered empty, an unknown summary entry `not_found`,
 a filter naming no schema field not applicable, `getEntry` of an unknown id `null`.
+
+The subpath ships its type declarations (`testing/index.d.ts`, the `types` condition in the exports map), so a
+checked test types the harness and its options (`RunConformanceOptions`, `ConformanceResult`).
 
 ```
 npm test          # node --test
