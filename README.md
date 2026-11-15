@@ -13,7 +13,7 @@ plugin was built against; the host compares majors and refuses a newer minor tha
 A plugin repo takes it as a devDependency pinned to the contract's tag; the host as a dependency, the same way:
 
 ```json
-"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.2.0"
+"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.2.1"
 ```
 
 Keep the lockfile's `resolved` URL on `git+https://`: npm may write `git+ssh://`, which a CI runner without SSH keys cannot fetch.

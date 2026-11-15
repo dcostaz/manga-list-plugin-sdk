@@ -29,5 +29,8 @@
   "exclude": [
     "node_modules",
     "tests"
+  ],
+  "files": [
+    "tests/testing-declarations.check.cjs"
   ]
 }

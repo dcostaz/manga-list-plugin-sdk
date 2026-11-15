@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.2.0).
+ * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.2.1).
  *
  * The SDK's version IS the contract version (§1 header): a plugin's manifest names the SDK version it was
  * built against in `pluginContractVersion`, and the host compares majors and refuses a newer minor.
@@ -10,7 +10,7 @@
  * constant).
  */
 
-const PLUGIN_CONTRACT_VERSION = '4.2.0';
+const PLUGIN_CONTRACT_VERSION = '4.2.1';
 
 /** A17: the oldest contract an `adapter` package may be built against (its access, filter and own reads changed). */
 const MIN_ADAPTER_CONTRACT_VERSION = '4.1.0';
