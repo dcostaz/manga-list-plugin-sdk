@@ -8,7 +8,7 @@
  */
 
 const { PLUGIN_ERROR_CODES } = require('./errors.cjs');
-const { ALT_TITLES_CONTRACT_VERSION } = require('./contract.cjs');
+const { ALT_TITLES_CONTRACT_VERSION, SERIES_STATUSES, CONTENT_RATINGS, DISPLAY_TITLE_KINDS } = require('./contract.cjs');
 
 /** @typedef {{ manifest?: { syncOptions?: any, pluginContractVersion?: string } | null, inputIds?: string[] | null }} ValidateOptions */
 
@@ -143,6 +143,272 @@ function pullToken(status, options, where, problems) {
     }
 }
 
+// ---------------------------------------------------------------------------
+// The record and its display part (§2.4.1, §2.6; 4.4.0, A32–A34, A38)
+// ---------------------------------------------------------------------------
+
+/** A32: the candidate holds the record's identity; `detail` never repeats it, and a search invents no sync time. */
+const RECORD_IDENTITY_KEYS = Object.freeze(['pluginEntryId', 'canonicalUrl', 'syncedAt', 'syncIntervalHint', 'cached', 'fetchedAt']);
+
+/**
+ * @param {unknown} value
+ * @returns {boolean}
+ */
+function isStringArray(value) {
+    return Array.isArray(value) && value.every((v) => typeof v === 'string');
+}
+
+/**
+ * A32: a field the source does not hold is absent — never `null`, an empty string or an empty list.
+ * @param {Record<string, unknown>} obj
+ * @param {string} where
+ * @param {string[]} problems
+ * @returns {string[]} the keys holding a value, to be checked further
+ */
+function heldKeys(obj, where, problems) {
+    /** @type {string[]} */
+    const keys = [];
+    for (const [key, value] of Object.entries(obj)) {
+        if (value === undefined) continue;
+        if (value === null || value === '' || (Array.isArray(value) && value.length === 0)) {
+            problems.push(`${where}.${key}: a field the source does not hold is absent, never null, '' or [] (A32)`);
+            continue;
+        }
+        keys.push(key);
+    }
+    return keys;
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} where
+ * @param {string[]} problems
+ */
+function contributors(value, where, problems) {
+    if (!Array.isArray(value) || value.some((c) => !(typeof c === 'string' || (isRecord(c) && typeof c.name === 'string' && (c.type === undefined || typeof c.type === 'string'))))) {
+        problems.push(`${where}: must be PluginContributor[] (a name, or { name, type? })`);
+    }
+}
+
+/**
+ * @param {unknown} value
+ * @param {string} where
+ * @param {string[]} problems
+ */
+function seriesStatus(value, where, problems) {
+    if (value !== undefined && !SERIES_STATUSES.includes(/** @type {string} */ (value))) {
+        problems.push(`${where}: '${String(value)}' is not one of ${SERIES_STATUSES.join(', ')}`);
+    }
+}
+
+/**
+ * An array of objects, each checked by `each`.
+ * @param {unknown} value
+ * @param {string} where
+ * @param {string[]} problems
+ * @param {(item: Record<string, unknown>, itemWhere: string) => void} each
+ */
+function objectList(value, where, problems, each) {
+    if (!Array.isArray(value)) {
+        problems.push(`${where}: must be an array`);
+        return;
+    }
+    value.forEach((item, index) => {
+        const itemWhere = `${where}[${index}]`;
+        if (!isRecord(item)) problems.push(`${itemWhere}: must be an object`);
+        else each(item, itemWhere);
+    });
+}
+
+/**
+ * Each named field of `obj`, where present, has the given type.
+ * @param {Record<string, unknown>} obj
+ * @param {Record<string, 'string' | 'number' | 'boolean'>} types
+ * @param {string} where
+ * @param {string[]} problems
+ */
+function typedFields(obj, types, where, problems) {
+    for (const [key, type] of Object.entries(types)) {
+        if (obj[key] !== undefined && typeof obj[key] !== type) problems.push(`${where}.${key}: must be a ${type}`);
+    }
+}
+
+/**
+ * An object whose named fields, where present, have the given types (and nothing is null or empty).
+ * @param {unknown} value
+ * @param {Record<string, 'string' | 'number' | 'boolean'>} types
+ * @param {string} where
+ * @param {string[]} problems
+ * @returns {Record<string, unknown> | null}
+ */
+function typedObject(value, types, where, problems) {
+    if (!isRecord(value)) {
+        problems.push(`${where}: must be an object`);
+        return null;
+    }
+    heldKeys(value, where, problems);
+    typedFields(value, types, where, problems);
+    return value;
+}
+
+/**
+ * `PluginEntryDisplay` (A33): every field optional, each its §2.6 type.
+ * @param {unknown} display
+ * @param {string} where
+ * @param {string[]} problems
+ */
+function entryDisplay(display, where, problems) {
+    if (!isRecord(display)) {
+        problems.push(`${where}: must be a PluginEntryDisplay object`);
+        return;
+    }
+    for (const key of heldKeys(display, where, problems)) {
+        const value = display[key];
+        const at = `${where}.${key}`;
+        switch (key) {
+            case 'titles':
+                objectList(value, at, problems, (t, w) => {
+                    if (typeof t.title !== 'string' || !t.title) problems.push(`${w}.title: must be a non-empty string`);
+                    if (!DISPLAY_TITLE_KINDS.includes(/** @type {string} */ (t.kind))) problems.push(`${w}.kind: must be one of ${DISPLAY_TITLE_KINDS.join(', ')}`);
+                    typedFields(t, { language: 'string' }, w, problems);
+                });
+                break;
+            case 'descriptions':
+                objectList(value, at, problems, (d, w) => {
+                    if (typeof d.text !== 'string' || !d.text) problems.push(`${w}.text: must be a non-empty string`);
+                    typedFields(d, { language: 'string' }, w, problems);
+                });
+                break;
+            case 'cover': {
+                const cover = typedObject(value, {}, at, problems);
+                if (!cover) break;
+                objectList(cover.sizes, `${at}.sizes`, problems, (s, w) => {
+                    if (typeof s.url !== 'string' || !s.url) problems.push(`${w}.url: must be a non-empty string`);
+                    typedFields(s, { width: 'number' }, w, problems);
+                });
+                if (cover.placeholder !== undefined && !(isRecord(cover.placeholder) && typeof cover.placeholder.blurhash === 'string' && cover.placeholder.blurhash)) {
+                    problems.push(`${at}.placeholder: must be { blurhash: string }`);
+                }
+                break;
+            }
+            case 'originalLanguage':
+            case 'demographic':
+            case 'statusText':
+            case 'magazine':
+                if (typeof value !== 'string') problems.push(`${at}: must be a string`);
+                break;
+            case 'contentRating':
+                if (!CONTENT_RATINGS.includes(/** @type {string} */ (value))) problems.push(`${at}: '${String(value)}' is not one of ${CONTENT_RATINGS.join(', ')}`);
+                break;
+            case 'dates':
+                typedObject(value, { started: 'string', ended: 'string', updated: 'string' }, at, problems);
+                break;
+            case 'volumes':
+            case 'chapters':
+                typedObject(value, { final: 'number', latest: 'number', total: 'number' }, at, problems);
+                break;
+            case 'tags':
+                objectList(value, at, problems, (t, w) => {
+                    if (typeof t.name !== 'string' || !t.name) problems.push(`${w}.name: must be a non-empty string`);
+                    typedFields(t, { group: 'string', path: 'string', spoiler: 'boolean', votes: 'number' }, w, problems);
+                });
+                break;
+            case 'ratings':
+                objectList(value, at, problems, (r, w) => {
+                    if (typeof r.source !== 'string' || !r.source) problems.push(`${w}.source: must be a non-empty string`);
+                    if (typeof r.scale !== 'number' || !(r.scale > 0)) problems.push(`${w}.scale: must be a number above 0`);
+                    if (typeof r.value !== 'number' || r.value < 0 || (typeof r.scale === 'number' && r.value > r.scale)) {
+                        problems.push(`${w}.value: must be a number within 0–scale (its percentage is value / scale)`);
+                    }
+                    typedFields(r, { votes: 'number' }, w, problems);
+                });
+                break;
+            case 'popularity':
+                typedObject(value, { rank: 'number', follows: 'number', lists: 'number' }, at, problems);
+                break;
+            case 'licensing':
+                typedObject(value, { licensed: 'boolean', anime: 'boolean' }, at, problems);
+                break;
+            case 'relations':
+                objectList(value, at, problems, (r, w) => {
+                    if (typeof r.relation !== 'string' || !r.relation) problems.push(`${w}.relation: must be a non-empty string`);
+                    typedFields(r, { title: 'string', pluginEntryId: 'string', url: 'string' }, w, problems);
+                });
+                break;
+            case 'recommendations':
+                objectList(value, at, problems, (r, w) => {
+                    if (typeof r.title !== 'string' || !r.title) problems.push(`${w}.title: must be a non-empty string`);
+                    typedFields(r, { pluginEntryId: 'string', url: 'string' }, w, problems);
+                });
+                break;
+            case 'links':
+                objectList(value, at, problems, (l, w) => {
+                    if (typeof l.label !== 'string' || !l.label) problems.push(`${w}.label: must be a non-empty string`);
+                    if (typeof l.url !== 'string' || !l.url) problems.push(`${w}.url: must be a non-empty string`);
+                    typedFields(l, { type: 'string', language: 'string' }, w, problems);
+                });
+                break;
+            case 'translations':
+                objectList(value, at, problems, (t, w) => {
+                    if (typeof t.language !== 'string' || !t.language) problems.push(`${w}.language: must be a non-empty string`);
+                });
+                break;
+            case 'site': {
+                const site = typedObject(value, { id: 'string', label: 'string', address: 'string', path: 'string' }, at, problems);
+                if (site && (typeof site.id !== 'string' || typeof site.label !== 'string')) problems.push(`${at}: carries 'id' and 'label'`);
+                break;
+            }
+            case 'progress':
+                typedObject(value, { chapter: 'number', downloaded: 'number', checking: 'boolean' }, at, problems);
+                break;
+            case 'folder': {
+                const folder = typedObject(value, { path: 'string', exists: 'boolean' }, at, problems);
+                if (folder && (typeof folder.path !== 'string' || typeof folder.exists !== 'boolean')) problems.push(`${at}: carries 'path' and 'exists'`);
+                break;
+            }
+            default:
+                problems.push(`${at}: not a PluginEntryDisplay field (§2.6); a kind of information no field holds waits for the contract's vocabulary to grow`);
+        }
+    }
+}
+
+/**
+ * The contribution's descriptive fields, where present, each its §2.6 type.
+ * @param {Record<string, unknown>} rec
+ * @param {string} where
+ * @param {string[]} problems
+ */
+function descriptiveFields(rec, where, problems) {
+    typedFields(rec, { displayTitle: 'string', description: 'string', coverUrl: 'string', year: 'number', seriesType: 'string' }, where, problems);
+    for (const key of ['altTitles', 'genres', 'tags']) {
+        if (rec[key] !== undefined && !isStringArray(rec[key])) problems.push(`${where}.${key}: must be string[]`);
+    }
+    for (const key of ['authors', 'artists', 'publishers']) {
+        if (rec[key] !== undefined) contributors(rec[key], `${where}.${key}`, problems);
+    }
+    if (rec.sourceLinks !== undefined && !Array.isArray(rec.sourceLinks)) problems.push(`${where}.sourceLinks: must be PluginSourceLink[]`);
+    seriesStatus(rec.seriesStatus, `${where}.seriesStatus`, problems);
+}
+
+/**
+ * A32: `PluginEntryRecord`, a candidate's `detail`.
+ * @param {unknown} detail
+ * @param {string} where
+ * @param {string[]} problems
+ */
+function entryRecord(detail, where, problems) {
+    if (!isRecord(detail)) {
+        problems.push(`${where}: must be a PluginEntryRecord object`);
+        return;
+    }
+    for (const key of RECORD_IDENTITY_KEYS) {
+        if (detail[key] !== undefined) problems.push(`${where}.${key}: the candidate holds the record's identity; detail never repeats it (A32)`);
+    }
+    heldKeys(detail, where, problems);
+    descriptiveFields(detail, where, problems);
+    if (detail.display !== undefined && detail.display !== null) entryDisplay(detail.display, `${where}.display`, problems);
+}
+
 /**
  * @param {unknown} value
  * @returns {boolean}
@@ -183,6 +449,11 @@ const VALIDATORS = {
             if (c.fetchedAt !== undefined && typeof c.fetchedAt !== 'string') {
                 problems.push(`${where}: 'fetchedAt' must be an ISO string when present`);
             }
+            if (c.altTitles !== undefined && !isStringArray(c.altTitles)) {
+                problems.push(`${where}: 'altTitles' must be string[] when present`);
+            }
+            // A32 (4.4.0): the record as far as the search response holds it.
+            if (c.detail !== undefined) entryRecord(c.detail, `${where}.detail`, problems);
         });
         return problems;
     },
@@ -195,6 +466,9 @@ const VALIDATORS = {
         const problems = [];
         requiredString(result, 'pluginEntryId', 'lookup', problems);
         nullableField(result, 'canonicalUrl', 'string', 'lookup', problems);
+        seriesStatus(result.seriesStatus, 'lookup.seriesStatus', problems);
+        // A33 (4.4.0): everything the source holds for the entry.
+        if (result.display !== undefined) entryDisplay(result.display, 'lookup.display', problems);
         return problems;
     },
 

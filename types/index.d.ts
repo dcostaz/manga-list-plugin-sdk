@@ -4,7 +4,7 @@
  */
 
 export * from './plugintypedefs';
-import type { PluginCallContext, PluginModuleDescriptor } from './plugintypedefs';
+import type { PluginCallContext, PluginModuleDescriptor, PluginSeriesStatus, PluginContentRating, PluginDisplayTitle } from './plugintypedefs';
 
 export const PLUGIN_CONTRACT_VERSION: string;
 export const PLUGIN_SETTINGS_CONTRACT_VERSION: string;
@@ -20,6 +20,18 @@ export const DOMAIN_SIDE: Readonly<Record<string, 'system' | 'user'>>;
 export const HOST_READING_STATUSES: readonly string[];
 export const PROGRESS_AXIS_CATALOG: readonly string[];
 export const PROGRESS_AXIS_SCALES: readonly string[];
+/** §2.6's series statuses (A34, 4.4.0: `cancelled`). */
+export const SERIES_STATUSES: readonly PluginSeriesStatus[];
+/** §2.6 `PluginEntryDisplay.contentRating` (4.4.0). */
+export const CONTENT_RATINGS: readonly PluginContentRating[];
+/** §2.6 `PluginEntryDisplay.titles[].kind` (4.4.0). */
+export const DISPLAY_TITLE_KINDS: readonly PluginDisplayTitle['kind'][];
+/** A36 (4.4.0): the result-cap setting's key, its ceiling and its default. */
+export const RESULT_CAP_SETTING: 'search.resultCap';
+export const RESULT_CAP_MAX: number;
+export const RESULT_CAP_DEFAULT: number;
+/** A36: the plugin's result cap from its settings, within 1–RESULT_CAP_MAX. */
+export function resultCapOf(settings: Record<string, unknown> | null | undefined): number;
 export const PLUGIN_ERROR_CODES: readonly string[];
 export const HOST_CONTRACT_VIOLATION: 'host_contract_violation';
 

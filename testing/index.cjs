@@ -13,7 +13,7 @@
  */
 
 const path = require('path');
-const { OFFER_METHODS, OWN_READ_METHODS, HOST_READING_STATUSES } = require('../src/contract.cjs');
+const { OFFER_METHODS, OWN_READ_METHODS, HOST_READING_STATUSES, RESULT_CAP_MAX } = require('../src/contract.cjs');
 const { validateResult } = require('../src/validators.cjs');
 const { isPluginError, HOST_CONTRACT_VIOLATION } = require('../src/errors.cjs');
 
@@ -321,7 +321,7 @@ function settingsShim(settings) {
  *   context?: (overrides?: object) => CallContext,
  *   expect?: { readingListLength?: number },
  * }} options
- * @returns {Promise<{ passed: string[], failed: CaseFailure[] }>}
+ * @returns {Promise<{ passed: string[], failed: CaseFailure[], skipped: string[] }>}
  */
 async function runConformance(options) {
     const { WrapperClass, manifest } = options;
@@ -341,6 +341,8 @@ async function runConformance(options) {
     const passed = [];
     /** @type {CaseFailure[]} */
     const failed = [];
+    /** @type {string[]} */
+    const skipped = [];
 
     /**
      * @param {string} id
@@ -411,7 +413,7 @@ async function runConformance(options) {
         return instance ? [] : ['WrapperClass.init() returned nothing'];
     });
     if (!instance) {
-        return { passed, failed };
+        return { passed, failed, skipped };
     }
 
     /**
@@ -652,6 +654,56 @@ async function runConformance(options) {
         });
     }
 
+    // ── every hit, and every candidate an entry (4.4.0: A35, A36, A38) ─────────
+    // These read what the source answers, so they run against the plugin's own source fixture (or, for a
+    // `file-path` plugin, its grant over fixture files); against the generic source, which answers nothing, they
+    // would pass without testing anything, and are reported as skipped instead.
+    const ownSource = !generic || filePath;
+    if (needed.has('search')) {
+        const id = 'A35.allHits-answers-at-least-the-filtered-hits-and-at-most-the-cap';
+        if (!ownSource) {
+            skipped.push(id);
+        } else {
+            await check(id, 'behaviour', 'A35', async () => {
+                const [query] = inputs.search || ['a title'];
+                const filtered = await invoke('search', [query, undefined], makeContext());
+                const every = await invoke('search', [query, { allHits: true }], makeContext());
+                /** @type {string[]} */
+                const problems = validateResult('search', every);
+                const filteredCount = Array.isArray(filtered) ? filtered.length : 0;
+                const everyCount = Array.isArray(every) ? every.length : 0;
+                if (everyCount < filteredCount) problems.push(`allHits answered ${everyCount} hits, fewer than the ${filteredCount} without it`);
+                if (everyCount > RESULT_CAP_MAX) problems.push(`allHits answered ${everyCount} hits, above the result cap's ceiling of ${RESULT_CAP_MAX} (A36)`);
+                return problems;
+            });
+        }
+    }
+    if (needed.has('search') && needed.has('lookup')) {
+        const id = 'A38.every-candidate-resolves-by-lookup';
+        const candidates = Array.isArray(results.search) ? /** @type {any[]} */ (results.search) : [];
+        if (!ownSource || candidates.length === 0) {
+            skipped.push(id);
+        } else {
+            await check(id, 'behaviour', 'A38', async () => {
+                /** @type {string[]} */
+                const problems = [];
+                for (const candidate of candidates.slice(0, 3)) {
+                    const entryId = String(candidate && candidate.pluginEntryId);
+                    try {
+                        const detail = await invoke('lookup', [entryId], makeContext());
+                        problems.push(...validateResult('lookup', detail));
+                        if (detail && /** @type {any} */ (detail).pluginEntryId !== entryId) {
+                            problems.push(`lookup('${entryId}') answered the entry '${String(/** @type {any} */ (detail).pluginEntryId)}'`);
+                        }
+                    } catch (error) {
+                        problems.push(`the candidate '${entryId}' does not resolve by lookup: ${error instanceof Error ? error.message : String(error)} (A38: every candidate is an entry)`);
+                    }
+                }
+                return problems;
+            });
+        }
+    }
+
     // ── fixture expectations ────────────────────────────────────────────────
     if (options.expect && typeof options.expect.readingListLength === 'number' && needed.has('getReadingList')) {
         const expected = options.expect.readingListLength;
@@ -661,7 +713,7 @@ async function runConformance(options) {
         });
     }
 
-    return { passed, failed };
+    return { passed, failed, skipped };
 }
 
 module.exports = {

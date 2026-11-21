@@ -99,6 +99,8 @@ export interface RunConformanceOptions {
 export interface ConformanceResult {
     passed: string[];
     failed: CaseFailure[];
+    /** Cases that need the plugin's own source fixture and were not run against the generic one (4.4.0: A35, A38). */
+    skipped: string[];
 }
 
 export function createStubAxios(handler?: StubHandler): StubAxios;
