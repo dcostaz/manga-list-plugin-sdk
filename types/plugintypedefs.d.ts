@@ -1,5 +1,5 @@
 /**
- * Type definitions for manga-list plugin packages, contract 4.2.0
+ * Type definitions for manga-list plugin packages, contract 4.4.0
  * (docs/plugins/host-capability-contract.md in the host repo; §2.6 defines the result shapes).
  *
  * Moved from manga-list-plugin-template/types/plugintypedefs.d.ts by Plan-2026Q4-tracker-plugin-standardization
@@ -143,6 +143,19 @@ export interface PluginEntryError {
 // Search and enrich (§2, §2.4, §2.6)
 // ---------------------------------------------------------------------------
 
+/**
+ * `search(query, options?)`'s options. `refresh` (A31) answers from the source, never the plugin's cache; `allHits`
+ * (A35, 4.4.0) answers every hit the plugin finds, its own filtering of hits skipped, at most its result cap (A36).
+ */
+export interface PluginSearchOptions {
+  refresh?: boolean;
+  allHits?: boolean;
+}
+
+/**
+ * A search candidate (§2.6). From 4.4.0 every candidate is an entry the plugin's `lookup` and `enrich` resolve by
+ * its `pluginEntryId` (A38), and may carry `detail`, the record as far as the search response holds it (A32).
+ */
 export interface PluginMatchCandidate {
   pluginEntryId: string;
   title: string;
@@ -151,6 +164,8 @@ export interface PluginMatchCandidate {
   canonicalUrl: string | null;
   cached?: boolean;
   fetchedAt?: string;
+  /** A32 (4.4.0): the record without its identity; the candidate holds `pluginEntryId`, `canonicalUrl`, `cached`, `fetchedAt`. */
+  detail?: PluginEntryRecord;
 }
 
 export interface PluginSourceLink {
@@ -171,7 +186,7 @@ export interface PluginLinkContribution {
   artists?: PluginContributor[];
   description?: string;
   coverUrl?: string;
-  seriesStatus?: 'ongoing' | 'completed' | 'hiatus' | 'unknown';
+  seriesStatus?: PluginSeriesStatus;
   genres?: string[];
   tags?: string[];
   year?: number;
@@ -191,9 +206,173 @@ export interface PluginEnrichOptions {
   refresh?: boolean;
 }
 
-/** search.lookup's result: full detail for one known entry. */
+/**
+ * search.lookup's result: full detail for one known entry. From 4.4.0 its `display` part is everything the source
+ * holds for it, a second read of the source included where the source needs one (A33).
+ */
 export interface PluginEntryDetail extends PluginLinkContribution {
   canonicalUrl: string | null;
+  /** A33 (4.4.0): Presenting's only; Enriching never stores it. */
+  display?: PluginEntryDisplay;
+}
+
+/**
+ * A32 (4.4.0): the record a search candidate carries — the contribution's descriptive fields without its identity
+ * (`pluginEntryId`, `syncedAt`, `syncIntervalHint`, `cached`, `fetchedAt`), and the display part. A field the source
+ * does not hold is absent, never empty, `null` or a placeholder.
+ */
+export interface PluginEntryRecord extends Omit<PluginLinkContribution, 'pluginEntryId' | 'syncedAt' | 'syncIntervalHint' | 'cached' | 'fetchedAt'> {
+  display?: PluginEntryDisplay;
+}
+
+// ---------------------------------------------------------------------------
+// The display part (§2.4.1, §2.6; 4.4.0)
+// ---------------------------------------------------------------------------
+
+/** A34 (4.4.0): `cancelled` joins the series statuses. */
+export type PluginSeriesStatus = 'ongoing' | 'completed' | 'hiatus' | 'cancelled' | 'unknown';
+
+/** A title as the source gives it; the host's *matched title* is the host's mark, never a kind. */
+export interface PluginDisplayTitle {
+  title: string;
+  /** A language code. */
+  language?: string;
+  kind: 'main' | 'alternate' | 'native' | 'romanized';
+}
+
+export interface PluginDisplayDescription {
+  /** Plain text, line breaks kept. */
+  text: string;
+  language?: string;
+}
+
+export interface PluginDisplayCoverSize {
+  url: string;
+  width?: number;
+}
+
+export interface PluginDisplayCover {
+  sizes: PluginDisplayCoverSize[];
+  placeholder?: { blurhash: string };
+}
+
+export type PluginContentRating = 'safe' | 'suggestive' | 'erotica' | 'pornographic';
+
+/** ISO dates. */
+export interface PluginDisplayDates {
+  started?: string;
+  ended?: string;
+  updated?: string;
+}
+
+export interface PluginDisplayCount {
+  final?: number;
+  latest?: number;
+  total?: number;
+}
+
+export interface PluginDisplayTag {
+  name: string;
+  group?: string;
+  path?: string;
+  spoiler?: boolean;
+  votes?: number;
+}
+
+/** A rating on the source's own scale; its percentage is `value / scale`. */
+export interface PluginDisplayRating {
+  source: string;
+  value: number;
+  scale: number;
+  votes?: number;
+}
+
+export interface PluginDisplayPopularity {
+  rank?: number;
+  follows?: number;
+  lists?: number;
+}
+
+export interface PluginDisplayLicensing {
+  licensed?: boolean;
+  anime?: boolean;
+}
+
+export interface PluginDisplayRelation {
+  relation: string;
+  title?: string;
+  pluginEntryId?: string;
+  url?: string;
+}
+
+export interface PluginDisplayRecommendation {
+  title: string;
+  pluginEntryId?: string;
+  url?: string;
+}
+
+/** An external link; an adapter's site lists (the sites a series is listed on) are links too (A38). */
+export interface PluginDisplayLink {
+  label: string;
+  url: string;
+  type?: string;
+  language?: string;
+}
+
+export interface PluginDisplayTranslation {
+  language: string;
+}
+
+/** The site within the source, and the series' path there. */
+export interface PluginDisplaySite {
+  id: string;
+  label: string;
+  address?: string;
+  path?: string;
+}
+
+/** The entry's own progress at the source. */
+export interface PluginDisplayProgress {
+  chapter?: number;
+  downloaded?: number;
+  checking?: boolean;
+}
+
+export interface PluginDisplayFolder {
+  path: string;
+  exists: boolean;
+}
+
+/**
+ * A33 (4.4.0): what Presenting shows and Enriching never stores. Every field optional. Where it holds a richer form
+ * of a contribution field (titles, descriptions, cover, tags, links, dates, the status as worded), Presenting reads
+ * this one; a role on an author or publisher is the contributor's own `type` (`PluginContributor`).
+ */
+export interface PluginEntryDisplay {
+  titles?: PluginDisplayTitle[];
+  descriptions?: PluginDisplayDescription[];
+  cover?: PluginDisplayCover;
+  /** A language code. */
+  originalLanguage?: string;
+  demographic?: string;
+  contentRating?: PluginContentRating;
+  /** The status as the source words it. */
+  statusText?: string;
+  dates?: PluginDisplayDates;
+  volumes?: PluginDisplayCount;
+  chapters?: PluginDisplayCount;
+  magazine?: string;
+  tags?: PluginDisplayTag[];
+  ratings?: PluginDisplayRating[];
+  popularity?: PluginDisplayPopularity;
+  licensing?: PluginDisplayLicensing;
+  relations?: PluginDisplayRelation[];
+  recommendations?: PluginDisplayRecommendation[];
+  links?: PluginDisplayLink[];
+  translations?: PluginDisplayTranslation[];
+  site?: PluginDisplaySite;
+  progress?: PluginDisplayProgress;
+  folder?: PluginDisplayFolder;
 }
 
 export interface PluginEnrichResult {

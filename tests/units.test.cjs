@@ -133,6 +133,84 @@ test('A31: an enrich contribution may say it was cached, and when it was fetched
     assert.match(sdk.validateResult('enrich', ok({ fetchedAt: 5 })).join(' '), /'fetchedAt' must be an ISO string/);
 });
 
+/** A full 4.4.0 candidate: its detail carries descriptive fields and a display part. */
+function fullCandidate() {
+    return {
+        pluginEntryId: '7', title: 'Seven', altTitles: ['Sette'], confidence: 0.9, canonicalUrl: 'https://example.invalid/series/7',
+        detail: {
+            displayTitle: 'Seven', altTitles: ['Sette'], description: 'A series.', seriesStatus: 'cancelled', genres: ['Action'],
+            authors: ['A. Writer', { name: 'B. Artist', type: 'art' }], year: 2017,
+            display: {
+                titles: [{ title: 'Seven', kind: 'main', language: 'en' }, { title: '七', kind: 'native', language: 'zh' }],
+                descriptions: [{ text: 'A series.\nIn two lines.', language: 'en' }],
+                cover: { sizes: [{ url: 'https://example.invalid/c/7.webp', width: 512 }], placeholder: { blurhash: 'LEHV6nWB2yk8pyo0adR*.7kCMdnj' } },
+                contentRating: 'suggestive', statusText: 'Cancelled (2019)', dates: { started: '2017-01-01' },
+                chapters: { latest: 120 }, tags: [{ name: 'Isekai', group: 'Theme', spoiler: true }],
+                ratings: [{ source: 'Example', value: 7.5, scale: 10, votes: 120 }], popularity: { follows: 2297 },
+                links: [{ label: 'Listed on Site B', url: 'https://site-b.invalid/series/7', type: 'site' }],
+                site: { id: 'site-a', label: 'Site A', path: '/series/7' }, progress: { chapter: 118 },
+                folder: { path: 'D:/manga/Seven', exists: true },
+            },
+        },
+    };
+}
+
+test('4.4.0: the contract\'s vocabularies, and A36\'s result cap within 1–25', () => {
+    assert.ok(sdk.SERIES_STATUSES.includes('cancelled'), 'A34');
+    assert.deepEqual([...sdk.CONTENT_RATINGS], ['safe', 'suggestive', 'erotica', 'pornographic']);
+    assert.equal(sdk.RESULT_CAP_SETTING, 'search.resultCap');
+    assert.equal(sdk.resultCapOf({}), 25);
+    assert.equal(sdk.resultCapOf(null), 25);
+    assert.equal(sdk.resultCapOf({ 'search.resultCap': 10 }), 10);
+    assert.equal(sdk.resultCapOf({ 'search.resultCap': 50 }), 25, 'never above the ceiling');
+    assert.equal(sdk.resultCapOf({ 'search.resultCap': 0 }), 25, 'a cap below 1 is the default');
+});
+
+test('A32–A34: a candidate\'s detail, and its display part, validate when they are the contract\'s', () => {
+    assert.deepEqual(sdk.validateResult('search', [fullCandidate()]), []);
+    assert.deepEqual(sdk.validateResult('search', [{ pluginEntryId: '8', title: 'Thin', confidence: 1, canonicalUrl: null, detail: {} }]), [], 'a thin record');
+    assert.deepEqual(sdk.validateResult('search', [{ pluginEntryId: '9', title: 'No detail', confidence: 1, canonicalUrl: null }]), [], 'a 4.3.0 candidate');
+});
+
+test('A32: detail never repeats the candidate\'s identity, and a field the source does not hold is absent', () => {
+    const c = fullCandidate();
+    Object.assign(c.detail, { pluginEntryId: '7', syncedAt: '2026-11-20T00:00:00.000Z' });
+    const problems = sdk.validateResult('search', [c]).join(' ');
+    assert.match(problems, /detail\.pluginEntryId: the candidate holds the record's identity/);
+    assert.match(problems, /detail\.syncedAt: the candidate holds the record's identity/);
+    const empty = fullCandidate();
+    Object.assign(empty.detail, { description: '', genres: [] });
+    Object.assign(empty.detail.display, { magazine: null });
+    const emptyProblems = sdk.validateResult('search', [empty]).join(' ');
+    assert.match(emptyProblems, /detail\.description: a field the source does not hold is absent/);
+    assert.match(emptyProblems, /detail\.genres: a field the source does not hold is absent/);
+    assert.match(emptyProblems, /display\.magazine: a field the source does not hold is absent/);
+});
+
+test('A33: the display part\'s vocabularies, a rating within its scale, and no field outside §2.6', () => {
+    const c = fullCandidate();
+    Object.assign(c.detail.display, {
+        contentRating: 'adult',
+        ratings: [{ source: 'Example', value: 12, scale: 10 }],
+        titles: [{ title: 'Seven', kind: 'matched' }],
+        mood: 'grim',
+    });
+    Object.assign(c.detail, { seriesStatus: 'paused' });
+    const problems = sdk.validateResult('search', [c]).join(' ');
+    assert.match(problems, /contentRating: 'adult' is not one of/);
+    assert.match(problems, /ratings\[0\]\.value: must be a number within 0–scale/);
+    assert.match(problems, /titles\[0\]\.kind: must be one of main, alternate, native, romanized/);
+    assert.match(problems, /display\.mood: not a PluginEntryDisplay field/);
+    assert.match(problems, /seriesStatus: 'paused' is not one of/);
+});
+
+test('A33: lookup answers its display part, validated the same way', () => {
+    const detail = { pluginEntryId: '7', canonicalUrl: null, syncedAt: 'x', seriesStatus: 'cancelled', display: fullCandidate().detail.display };
+    assert.deepEqual(sdk.validateResult('lookup', detail), []);
+    assert.match(sdk.validateResult('lookup', { ...detail, display: { ratings: [{ source: 'x', value: 1, scale: 0 }] } }).join(' '), /scale: must be a number above 0/);
+    assert.match(sdk.validateResult('lookup', { ...detail, seriesStatus: 'paused' }).join(' '), /lookup\.seriesStatus: 'paused'/);
+});
+
 test('the token cache: a set is usable while unexpired; an expired one is kept as previous', () => {
     let now = 1000;
     const tokens = new TokenCache({ now: () => now });

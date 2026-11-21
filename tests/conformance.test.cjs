@@ -4,6 +4,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const { runConformance, createStubAxios, createStubContext } = require('../testing/index.cjs');
 const fixture = require('./fixtures/throwaway.cjs');
+const { PluginError } = require('../index.cjs');
 
 /** @param {{ failed: Array<{ id: string }> }} report */
 const failedIds = (report) => report.failed.map((f) => f.id);
@@ -31,6 +32,8 @@ test('the throwaway definition, every tracker offer bound, passes every case wit
         'unsubscribe.is-idempotent',
         'F11.no-identity-leaks-across-calls',
         'F11.cache-keys-name-the-scope',
+        'A35.allHits-answers-at-least-the-filtered-hits-and-at-most-the-cap',
+        'A38.every-candidate-resolves-by-lookup',
     ]) {
         assert.ok(report.passed.includes(id), `ran and passed ${id}`);
     }
@@ -100,4 +103,40 @@ test('a class whose init throws is one harness failure, and nothing else runs', 
     class Broken { static async init() { throw new Error('needs a factory'); } }
     const report = await runConformance({ WrapperClass: Broken, manifest: { pluginName: 'b', capabilities: ['search.query'] } });
     assert.deepEqual(report.failed.map((f) => [f.id, f.kind]), [['F12.search.query.has-search', 'structure'], ['harness.init', 'harness']]);
+});
+
+/**
+ * 4.4.0's search cases: a search whose `allHits` answers fewer hits than without it, and whose candidates do not
+ * resolve by `lookup`.
+ */
+class Lossy {
+    static async init() { return new Lossy(); }
+    async initialize() { return { status: 'ok' }; }
+    async getStatus() { return { status: 'ok' }; }
+    /** @param {string} _query @param {{ allHits?: boolean } | undefined} options @param {unknown} ctx */
+    async search(_query, options, ctx) {
+        if (!ctx) throw new PluginError('host_contract_violation', 'no callContext');
+        return options && options.allHits ? [] : [{ pluginEntryId: 'site-list:1', title: 'One', confidence: 1, canonicalUrl: null }];
+    }
+    /** @param {string} id @param {unknown} ctx */
+    async lookup(id, ctx) {
+        if (!ctx) throw new PluginError('host_contract_violation', 'no callContext');
+        throw new PluginError('not_found', `no entry '${id}'`);
+    }
+}
+const lossyManifest = { pluginName: 'lossy', capabilities: ['search.query', 'search.lookup'] };
+
+test('A35, A38: allHits answering fewer hits, and a candidate lookup cannot resolve, each fail their case', async () => {
+    const report = await runConformance({ WrapperClass: Lossy, manifest: lossyManifest, source: () => ({ status: 200, data: {} }) });
+    const failed = failedIds(report);
+    assert.ok(failed.includes('A35.allHits-answers-at-least-the-filtered-hits-and-at-most-the-cap'), failed.join(', '));
+    assert.ok(failed.includes('A38.every-candidate-resolves-by-lookup'), failed.join(', '));
+    assert.deepEqual(report.skipped, []);
+});
+
+test('A35, A38: against the generic source, which answers nothing, both are skipped, never passed', async () => {
+    const report = await runConformance({ WrapperClass: Lossy, manifest: lossyManifest });
+    assert.ok(report.skipped.includes('A35.allHits-answers-at-least-the-filtered-hits-and-at-most-the-cap'));
+    assert.ok(report.skipped.includes('A38.every-candidate-resolves-by-lookup'));
+    assert.ok(!report.passed.some((id) => id.startsWith('A35.') || id.startsWith('A38.')));
 });

@@ -13,7 +13,7 @@ plugin was built against; the host compares majors and refuses a newer minor tha
 A plugin repo takes it as a devDependency pinned to the contract's tag; the host as a dependency, the same way:
 
 ```json
-"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.3.0"
+"@manga-list/plugin-sdk": "git+https://github.com/dcostaz/manga-list-plugin-sdk.git#v4.4.0"
 ```
 
 Keep the lockfile's `resolved` URL on `git+https://`: npm may write `git+ssh://`, which a CI runner without SSH keys cannot fetch.
@@ -91,6 +91,16 @@ module.exports = definePlugin({
 - **A fresh `enrich` (4.3.0, A31).** `enrich(pluginEntryIds, options)` carries `options.refresh` when the user asks for
   the source's own answer; a convention binding passes it to `client.enrich(id, options)`. A contribution answered
   from the plugin's cache sets `cached: true` and `fetchedAt`, as a search candidate does (§2.4).
+- **What a source holds, and every hit (4.4.0, A32–A38).** A search candidate may carry `detail`
+  (`PluginEntryRecord`): the record as far as the search response holds it, without its identity (the candidate
+  keeps `pluginEntryId`, `canonicalUrl`, `cached`, `fetchedAt`; a search invents no `syncedAt`). `lookup` answers
+  `PluginEntryDetail` with its `display` part (`PluginEntryDisplay`): everything the source holds for the entry, a
+  second read of the source included, for Presenting only. A field the source does not hold is absent, never
+  `null`, `''` or `[]`; `validateResult` says so. `seriesStatus` gains `cancelled` (`SERIES_STATUSES`).
+  `search(query, options)` may carry `options.allHits` (Tracker Search only): answer every hit, your own filtering
+  of hits skipped, at most the plugin's result cap, `resultCapOf(settings)` (its `search.resultCap` setting, 1–25,
+  25 by default). Every candidate is an entry your `lookup` and `enrich` resolve by its `pluginEntryId` (A38): what
+  the source holds about the series elsewhere is display information on it (`display.links`), never a candidate.
 - **Results** — `perEntry()` for array offers (one result per entry, in order; a failure stays with its
   entry), `PluginError` (closed codes: `not_found`, `credential_rejected`, `rate_limited`, `offline`,
   `source_error`), `markCached()` for §2.4, `notFoundEntry()`. Never classify a `PluginError` with
@@ -107,7 +117,10 @@ const { runConformance, createStubAxios, createStubContext, callContext } = requ
 ```
 
 `runConformance({ WrapperClass, manifest, descriptor, initOptions, axios, context, credentials })` runs the
-contract cases against a loaded `WrapperClass` — built by the SDK or by hand — and returns `{ passed, failed }`.
+contract cases against a loaded `WrapperClass` — built by the SDK or by hand — and returns `{ passed, failed,
+skipped }`. The cases that read what a source answers (4.4.0: `allHits` answers at least the filtered hits and at
+most the cap; every candidate resolves by `lookup`) run against the plugin's own source fixture (`source` or
+`axios`, or a `file-path` plugin's grant); against the generic source, which answers nothing, they are `skipped`.
 For a `file-path` plugin, `credentials` are two path grants over fixture files, and the adapter cases run: the
 grant required on every call, an unreadable source never answered empty, an unknown summary entry `not_found`,
 a filter naming no schema field not applicable, `getEntry` of an unknown id `null`.

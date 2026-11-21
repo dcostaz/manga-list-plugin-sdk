@@ -1,7 +1,7 @@
 'use strict';
 
 /**
- * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.2.1).
+ * The contract's constants, in one place: docs/plugins/host-capability-contract.md (4.4.0).
  *
  * The SDK's version IS the contract version (§1 header): a plugin's manifest names the SDK version it was
  * built against in `pluginContractVersion`, and the host compares majors and refuses a newer minor.
@@ -10,7 +10,7 @@
  * constant).
  */
 
-const PLUGIN_CONTRACT_VERSION = '4.3.0';
+const PLUGIN_CONTRACT_VERSION = '4.4.0';
 
 /** A17: the oldest contract an `adapter` package may be built against (its access, filter and own reads changed). */
 const MIN_ADAPTER_CONTRACT_VERSION = '4.1.0';
@@ -132,6 +132,31 @@ const HOST_READING_STATUSES = Object.freeze(['READING', 'COMPLETED', 'PLAN_TO_RE
 const PROGRESS_AXIS_CATALOG = Object.freeze(['chapter', 'rating']);
 const PROGRESS_AXIS_SCALES = Object.freeze(['integer', 'decimal']);
 
+/** §2.6's series statuses; A34 (4.4.0) adds `cancelled`. */
+const SERIES_STATUSES = Object.freeze(['ongoing', 'completed', 'hiatus', 'cancelled', 'unknown']);
+/** §2.6 `PluginEntryDisplay.contentRating` (4.4.0). */
+const CONTENT_RATINGS = Object.freeze(['safe', 'suggestive', 'erotica', 'pornographic']);
+/** §2.6 `PluginEntryDisplay.titles[].kind` (4.4.0). */
+const DISPLAY_TITLE_KINDS = Object.freeze(['main', 'alternate', 'native', 'romanized']);
+/**
+ * A36 (4.4.0): a plugin answering `allHits` answers at most its result cap for each call — its `search.resultCap`
+ * setting, at most `RESULT_CAP_MAX`, `RESULT_CAP_DEFAULT` when unset.
+ */
+const RESULT_CAP_SETTING = 'search.resultCap';
+const RESULT_CAP_MAX = 25;
+const RESULT_CAP_DEFAULT = 25;
+
+/**
+ * A36: the plugin's result cap from its settings, within 1–RESULT_CAP_MAX.
+ * @param {Record<string, unknown> | null | undefined} settings
+ * @returns {number}
+ */
+function resultCapOf(settings) {
+    const raw = settings ? Number(settings[RESULT_CAP_SETTING]) : NaN;
+    if (!Number.isFinite(raw) || raw < 1) return RESULT_CAP_DEFAULT;
+    return Math.min(RESULT_CAP_MAX, Math.floor(raw));
+}
+
 module.exports = {
     PLUGIN_CONTRACT_VERSION,
     PLUGIN_SETTINGS_CONTRACT_VERSION,
@@ -171,4 +196,11 @@ module.exports = {
     HOST_READING_STATUSES,
     PROGRESS_AXIS_CATALOG,
     PROGRESS_AXIS_SCALES,
+    SERIES_STATUSES,
+    CONTENT_RATINGS,
+    DISPLAY_TITLE_KINDS,
+    RESULT_CAP_SETTING,
+    RESULT_CAP_MAX,
+    RESULT_CAP_DEFAULT,
+    resultCapOf,
 };
